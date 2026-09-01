@@ -75,7 +75,10 @@ if 'current_pick' not in st.session_state:
     st.session_state.current_pick = 1
 
 # Load Data
-st.sidebar.header("Data Feeds")
+st.sidebar.header(
+    "Data Feeds",
+    help="Upload your custom CSV containing projections or let the system default to live NFL data."
+)
 uploaded = st.sidebar.file_uploader("Upload Projections CSV (Optional)", type=["csv"])
 if uploaded:
     raw_df = pd.read_csv(uploaded)
@@ -129,7 +132,10 @@ scored_df['Survival %'] = scored_df['ADP'].apply(lambda x: simulate_survival(x, 
 # 6. SIDEBAR CONTROLS
 st.sidebar.markdown("---")
 curr_round = ((curr_p - 1) // 10) + 1
-st.sidebar.subheader(f"Round {curr_round} • Pick #{curr_p} / 160")
+st.sidebar.subheader(
+    f"Round {curr_round} • Pick #{curr_p} / 160",
+    help="Current overall pick counter and round number across the 160-selection snake draft."
+)
 
 if is_turn:
     st.sidebar.success("🚨 **YOU ARE ON THE CLOCK**")
@@ -141,9 +147,21 @@ else:
         st.sidebar.success("Draft Complete!")
 
 with st.sidebar.form("draft_action_form"):
-    selected_player = st.selectbox("Record Draft Pick:", scored_df['Name'].tolist() if not scored_df.empty else ["Pool Empty"])
-    mine = st.checkbox("Drafted to My Team", value=is_turn)
-    send_to_ir = st.checkbox("Direct to IR Slot", value=False)
+    selected_player = st.selectbox(
+        "Record Draft Pick:",
+        scored_df['Name'].tolist() if not scored_df.empty else ["Pool Empty"],
+        help="Select or type the player drafted by any team in your league."
+    )
+    mine = st.checkbox(
+        "Drafted to My Team",
+        value=is_turn,
+        help="Check this box if you are making this selection for your team (Slot 9)."
+    )
+    send_to_ir = st.checkbox(
+        "Direct to IR Slot",
+        value=False,
+        help="Check this if the player is designated Out/IR and you want to stash them directly into your 1 IR slot."
+    )
     btn_submit = st.form_submit_button("Confirm Pick")
 
     if btn_submit and not scored_df.empty:
@@ -179,12 +197,32 @@ st.title("Draft War Room — Slot 9 (10-Team Half-PPR)")
 
 c_main, c_team = st.columns([3, 2])
 
+# TABLE COLUMN CONFIGURATIONS WITH TOOLTIP HELP ICONS
+TABLE_COLUMN_CONFIG = {
+    "Name": st.column_config.TextColumn("Player Name", help="NFL player name"),
+    "Pos": st.column_config.TextColumn("Pos", help="Primary fantasy eligible position (QB, RB, WR, TE, DST, K)"),
+    "Team": st.column_config.TextColumn("Team", help="NFL franchise abbreviation"),
+    "ProjPts": st.column_config.NumberColumn("Proj Pts", help="Projected regular season fantasy points under Half-PPR scoring rules"),
+    "VORP": st.column_config.NumberColumn("VORP", help="Value Over Replacement Player: Projected fantasy points generated above waiver baseline (QB10, RB30, WR30, TE10)"),
+    "ADP": st.column_config.NumberColumn("ADP", help="Average Draft Position across consensus fantasy drafts"),
+    "Survival %": st.column_config.ProgressColumn(
+        "Survival %",
+        help="Monte Carlo simulated probability (0-100%) that this player will still be available at your next draft turn",
+        format="%d%%",
+        min_value=0,
+        max_value=100
+    ),
+    "Status Badge": st.column_config.TextColumn("Status", help="Real-time health status (Healthy, Questionable, Out, IR, Suspended)"),
+    "Notes": st.column_config.TextColumn("Injury Notes", help="Beat-writer details, injury reports, and practice participation context")
+}
+
 with c_main:
     tab_board, tab_all, tab_rb, tab_wr, tab_te, tab_qb, tab_dst_k, tab_injury = st.tabs(
         ["📋 Draft Board", "🔥 Best VORP", "🏃 Running Backs", "🙌 Wide Receivers", "🧱 Tight Ends", "🎯 Quarterbacks", "🛡️ D/ST & K", "🏥 Injury Hub"]
     )
 
     with tab_board:
+        st.caption("Live 10-Team × 16-Round Snake Board. Slot 9 is highlighted.")
         grid_data = {f"Team {i+1}": ["—"] * TOTAL_ROUNDS for i in range(NUM_TEAMS)}
         
         for item in st.session_state.draft_history:
@@ -232,7 +270,8 @@ with c_main:
             df_subset[['Name', 'Pos', 'Team', 'ProjPts', 'VORP', 'ADP', 'Survival %', 'Status Badge', 'Notes']]
             .sort_values(by=['VORP', 'ADP'], ascending=[False, True]),
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
+            column_config=TABLE_COLUMN_CONFIG
         )
 
     with tab_all:
@@ -253,15 +292,37 @@ with c_main:
         st.dataframe(
             injured_only[['Name', 'Pos', 'Team', 'ADP', 'Status', 'Notes']].sort_values(by='ADP'),
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
+            column_config={
+                "Name": st.column_config.TextColumn("Player Name", help="NFL player name"),
+                "Pos": st.column_config.TextColumn("Pos", help="Eligible position"),
+                "Team": st.column_config.TextColumn("Team", help="NFL team"),
+                "ADP": st.column_config.NumberColumn("ADP", help="Average draft position discount"),
+                "Status": st.column_config.TextColumn("Status", help="Current official designation"),
+                "Notes": st.column_config.TextColumn("Injury Notes", help="Doctor reports and return timeline")
+            }
         )
 
 with c_team:
-    st.subheader(f"My Team ({len(st.session_state.my_roster)}/16 Active + {len(st.session_state.my_ir)}/1 IR)")
+    st.subheader(
+        f"My Team ({len(st.session_state.my_roster)}/16 Active + {len(st.session_state.my_ir)}/1 IR)",
+        help="Tracks your drafted starters, bench players, and stashed IR targets."
+    )
     
     if st.session_state.my_roster:
         team_df = raw_df[raw_df['Name'].isin(st.session_state.my_roster)]
-        st.dataframe(team_df[['Name', 'Pos', 'Team', 'ProjPts', 'Status']], use_container_width=True, hide_index=True)
+        st.dataframe(
+            team_df[['Name', 'Pos', 'Team', 'ProjPts', 'Status']],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Name": st.column_config.TextColumn("Player Name"),
+                "Pos": st.column_config.TextColumn("Pos"),
+                "Team": st.column_config.TextColumn("Team"),
+                "ProjPts": st.column_config.NumberColumn("Proj Pts", help="Season projected fantasy points"),
+                "Status": st.column_config.TextColumn("Status", help="Current availability status")
+            }
+        )
         st.metric("Total Projected Starter Output", f"{team_df['ProjPts'].sum():.1f} pts")
     else:
         st.info("No active selections yet.")
@@ -272,7 +333,10 @@ with c_team:
         st.dataframe(ir_df[['Name', 'Pos', 'Team', 'Status', 'Notes']], use_container_width=True, hide_index=True)
 
     st.markdown("---")
-    st.subheader("Tier Scarcity Monitor")
+    st.subheader(
+        "Tier Scarcity Monitor",
+        help="Shows the point drop-off between the #1 available player and the #3 available player at each position. Large cliffs indicate you should prioritize that position now."
+    )
     for p in ['RB', 'WR', 'TE', 'QB']:
         top_tier = scored_df[scored_df['Pos'] == p].head(3)
         if len(top_tier) >= 2:
