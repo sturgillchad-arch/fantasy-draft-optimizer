@@ -3,18 +3,77 @@ import pandas as pd
 import numpy as np
 import requests
 
-st.set_page_config(page_title="Draft Optimizer (Slot 9)", layout="wide")
+st.set_page_config(page_title="Draft Optimizer War Room", layout="wide")
 
-# 1. LEAGUE CONFIGURATION
-NUM_TEAMS = 10
-TOTAL_ROUNDS = 16
-MY_SLOT = 9
+# 1. STATE INITIALIZATION
+if 'draft_history' not in st.session_state:
+    st.session_state.draft_history = []
+if 'my_roster' not in st.session_state:
+    st.session_state.my_roster = []
+if 'my_ir' not in st.session_state:
+    st.session_state.my_ir = []
+if 'current_pick' not in st.session_state:
+    st.session_state.current_pick = 1
 
-MY_PICKS = [9, 12, 29, 32, 49, 52, 69, 72, 89, 92, 109, 112, 129, 132, 149, 152]
-STARTER_LIMITS = {'QB': 1, 'RB': 2, 'WR': 2, 'TE': 1, 'DST': 1, 'K': 1, 'FLEX': 1}
-BASELINES = {'QB': 10, 'RB': 30, 'WR': 30, 'TE': 10, 'DST': 10, 'K': 10}
+# 2. SIDEBAR LEAGUE & POSITION CONFIGURATION
+st.sidebar.header(
+    "Draft & League Settings",
+    help="Configure draft slot, team counts, and roster limits for any league format."
+)
 
-# 2. DATA FETCHER (Sleeper Public API with Fallback)
+num_teams = st.sidebar.number_input(
+    "League Size (Teams):",
+    min_value=6,
+    max_value=16,
+    value=10,
+    step=1,
+    help="Total number of teams in the draft."
+)
+
+total_rounds = st.sidebar.number_input(
+    "Total Rounds:",
+    min_value=10,
+    max_value=25,
+    value=16,
+    step=1,
+    help="Total rounds in the draft (starters + bench)."
+)
+
+my_slot = st.sidebar.selectbox(
+    "Your Draft Position:",
+    options=list(range(1, num_teams + 1)),
+    index=min(8, num_teams - 1),  # Defaults to 9th position
+    help="Select your draft slot (1 through N)."
+)
+
+TOTAL_PICKS = num_teams * total_rounds
+
+# Generate dynamic snake pick schedule for selected draft slot
+def generate_my_picks(slot, teams, rounds):
+    picks = []
+    for r in range(rounds):
+        if r % 2 == 0:
+            # Odd round (Round 1, 3, 5...): 1 -> N
+            p = (r * teams) + slot
+        else:
+            # Even round (Round 2, 4, 6...): N -> 1
+            p = (r * teams) + (teams - slot + 1)
+        picks.append(p)
+    return picks
+
+my_picks = generate_my_picks(my_slot, num_teams, total_rounds)
+
+# 3. BASELINE REPLACEMENT RANKS
+BASELINES = {
+    'QB': num_teams,
+    'RB': int(num_teams * 3.0),
+    'WR': int(num_teams * 3.0),
+    'TE': num_teams,
+    'DST': num_teams,
+    'K': num_teams
+}
+
+# 4. DATA FETCHER (Sleeper Public API with Fallback)
 @st.cache_data(ttl=3600)
 def fetch_player_pool():
     try:
@@ -64,20 +123,10 @@ def fetch_player_pool():
         ]
         return pd.DataFrame(data)
 
-# 3. STATE INITIALIZATION
-if 'draft_history' not in st.session_state:
-    st.session_state.draft_history = []
-if 'my_roster' not in st.session_state:
-    st.session_state.my_roster = []
-if 'my_ir' not in st.session_state:
-    st.session_state.my_ir = []
-if 'current_pick' not in st.session_state:
-    st.session_state.current_pick = 1
-
-# Load Data
+st.sidebar.markdown("---")
 st.sidebar.header(
     "Data Feeds",
-    help="Upload your custom CSV containing projections or let the system default to live NFL data."
+    help="Upload your custom CSV containing projections or default to live NFL data."
 )
 uploaded = st.sidebar.file_uploader("Upload Projections CSV (Optional)", type=["csv"])
 if uploaded:
@@ -87,7 +136,7 @@ else:
 
 drafted_names = [d['name'] for d in st.session_state.draft_history]
 
-# 4. VORP ENGINE
+# 5. DYNAMIC VORP ENGINE
 def calculate_dynamic_vorp(df, my_roster_names):
     df_calc = df.copy()
     my_players = df_calc[df_calc['Name'].isin(my_roster_names)]
@@ -110,15 +159,18 @@ def calculate_dynamic_vorp(df, my_roster_names):
 available_df = raw_df[~raw_df['Name'].isin(drafted_names)].copy()
 scored_df = calculate_dynamic_vorp(available_df, st.session_state.my_roster)
 
-# 5. TURN GAP & MONTE CARLO
+# 6. DYNAMIC TURN GAP & MONTE CARLO
 curr_p = st.session_state.current_pick
-is_turn = curr_p in MY_PICKS
+is_turn = curr_p in my_picks
 
 if is_turn:
-    idx = MY_PICKS.index(curr_p)
-    gap = 2 if (idx % 2 == 0) else 16
+    curr_idx = my_picks.index(curr_p)
+    if curr_idx < len(my_picks) - 1:
+        gap = my_picks[curr_idx + 1] - curr_p
+    else:
+        gap = 0
 else:
-    upcoming = [p for p in MY_PICKS if p > curr_p]
+    upcoming = [p for p in my_picks if p > curr_p]
     gap = (upcoming[0] - curr_p) if upcoming else 0
 
 def simulate_survival(adp, current_pick, target_gap, n_sims=300):
@@ -129,20 +181,20 @@ def simulate_survival(adp, current_pick, target_gap, n_sims=300):
 
 scored_df['Survival %'] = scored_df['ADP'].apply(lambda x: simulate_survival(x, curr_p, gap))
 
-# 6. SIDEBAR CONTROLS
+# 7. SIDEBAR CONTROLS
 st.sidebar.markdown("---")
-curr_round = ((curr_p - 1) // 10) + 1
+curr_round = ((curr_p - 1) // num_teams) + 1
 st.sidebar.subheader(
-    f"Round {curr_round} • Pick #{curr_p} / 160",
-    help="Current overall pick counter and round number across the 160-selection snake draft."
+    f"Round {curr_round} • Pick #{curr_p} / {TOTAL_PICKS}",
+    help="Current overall pick counter and round number."
 )
 
 if is_turn:
-    st.sidebar.success("🚨 **YOU ARE ON THE CLOCK**")
+    st.sidebar.success(f"🚨 **YOU ARE ON THE CLOCK (SLOT {my_slot})**")
 else:
-    upcoming = [p for p in MY_PICKS if p > curr_p]
+    upcoming = [p for p in my_picks if p > curr_p]
     if upcoming:
-        st.sidebar.info(f"Picks until next turn: **{upcoming[0] - curr_p}** (Pick #{upcoming[0]})")
+        st.sidebar.info(f"Picks until your turn: **{upcoming[0] - curr_p}** (Pick #{upcoming[0]})")
     else:
         st.sidebar.success("Draft Complete!")
 
@@ -150,17 +202,17 @@ with st.sidebar.form("draft_action_form"):
     selected_player = st.selectbox(
         "Record Draft Pick:",
         scored_df['Name'].tolist() if not scored_df.empty else ["Pool Empty"],
-        help="Select or type the player drafted by any team in your league."
+        help="Select or type the player drafted by any team."
     )
     mine = st.checkbox(
         "Drafted to My Team",
         value=is_turn,
-        help="Check this box if you are making this selection for your team (Slot 9)."
+        help="Check this box if you are drafting this player for your squad."
     )
     send_to_ir = st.checkbox(
         "Direct to IR Slot",
         value=False,
-        help="Check this if the player is designated Out/IR and you want to stash them directly into your 1 IR slot."
+        help="Check this if stashing an injured player directly into your IR slot."
     )
     btn_submit = st.form_submit_button("Confirm Pick")
 
@@ -192,28 +244,27 @@ if st.sidebar.button("Reset Draft Board"):
     st.session_state.current_pick = 1
     st.rerun()
 
-# 7. MAIN INTERFACE
-st.title("Draft War Room — Slot 9 (10-Team Half-PPR)")
+# 8. MAIN INTERFACE
+st.title(f"Draft War Room — Slot {my_slot} of {num_teams} ({total_rounds} Rounds)")
 
 c_main, c_team = st.columns([3, 2])
 
-# TABLE COLUMN CONFIGURATIONS WITH TOOLTIP HELP ICONS
 TABLE_COLUMN_CONFIG = {
     "Name": st.column_config.TextColumn("Player Name", help="NFL player name"),
-    "Pos": st.column_config.TextColumn("Pos", help="Primary fantasy eligible position (QB, RB, WR, TE, DST, K)"),
-    "Team": st.column_config.TextColumn("Team", help="NFL franchise abbreviation"),
-    "ProjPts": st.column_config.NumberColumn("Proj Pts", help="Projected regular season fantasy points under Half-PPR scoring rules"),
-    "VORP": st.column_config.NumberColumn("VORP", help="Value Over Replacement Player: Projected fantasy points generated above waiver baseline (QB10, RB30, WR30, TE10)"),
-    "ADP": st.column_config.NumberColumn("ADP", help="Average Draft Position across consensus fantasy drafts"),
+    "Pos": st.column_config.TextColumn("Pos", help="Primary fantasy position"),
+    "Team": st.column_config.TextColumn("Team", help="NFL franchise"),
+    "ProjPts": st.column_config.NumberColumn("Proj Pts", help="Projected regular season fantasy points"),
+    "VORP": st.column_config.NumberColumn("VORP", help="Value Over Replacement Player relative to position baseline"),
+    "ADP": st.column_config.NumberColumn("ADP", help="Average Draft Position"),
     "Survival %": st.column_config.ProgressColumn(
         "Survival %",
-        help="Monte Carlo simulated probability (0-100%) that this player will still be available at your next draft turn",
+        help="Simulated probability this player survives until your next pick",
         format="%d%%",
         min_value=0,
         max_value=100
     ),
-    "Status Badge": st.column_config.TextColumn("Status", help="Real-time health status (Healthy, Questionable, Out, IR, Suspended)"),
-    "Notes": st.column_config.TextColumn("Injury Notes", help="Beat-writer details, injury reports, and practice participation context")
+    "Status Badge": st.column_config.TextColumn("Status", help="Health status"),
+    "Notes": st.column_config.TextColumn("Injury Notes", help="Availability and practice notes")
 }
 
 with c_main:
@@ -222,18 +273,18 @@ with c_main:
     )
 
     with tab_board:
-        st.caption("Live 10-Team × 16-Round Snake Board. Slot 9 is highlighted.")
-        grid_data = {f"Team {i+1}": ["—"] * TOTAL_ROUNDS for i in range(NUM_TEAMS)}
+        st.caption(f"Live {num_teams}-Team × {total_rounds}-Round Snake Board. Slot {my_slot} is highlighted.")
+        grid_data = {f"Team {i+1}": ["—"] * total_rounds for i in range(num_teams)}
         
         for item in st.session_state.draft_history:
             p_num = item['pick']
-            r_idx = (p_num - 1) // NUM_TEAMS
-            p_in_round = (p_num - 1) % NUM_TEAMS
-            col_idx = p_in_round if (r_idx % 2 == 0) else (NUM_TEAMS - 1 - p_in_round)
+            r_idx = (p_num - 1) // num_teams
+            p_in_round = (p_num - 1) % num_teams
+            col_idx = p_in_round if (r_idx % 2 == 0) else (num_teams - 1 - p_in_round)
             col_name = f"Team {col_idx + 1}"
             grid_data[col_name][r_idx] = f"{item['name']} ({item['pos']})"
 
-        board_df = pd.DataFrame(grid_data, index=[f"Round {r+1}" for r in range(TOTAL_ROUNDS)])
+        board_df = pd.DataFrame(grid_data, index=[f"Round {r+1}" for r in range(total_rounds)])
 
         def style_draft_grid(val):
             if "—" in val:
@@ -305,8 +356,8 @@ with c_main:
 
 with c_team:
     st.subheader(
-        f"My Team ({len(st.session_state.my_roster)}/16 Active + {len(st.session_state.my_ir)}/1 IR)",
-        help="Tracks your drafted starters, bench players, and stashed IR targets."
+        f"My Team ({len(st.session_state.my_roster)}/{total_rounds} Active + {len(st.session_state.my_ir)}/1 IR)",
+        help="Tracks your drafted squad."
     )
     
     if st.session_state.my_roster:
@@ -335,7 +386,7 @@ with c_team:
     st.markdown("---")
     st.subheader(
         "Tier Scarcity Monitor",
-        help="Shows the point drop-off between the #1 available player and the #3 available player at each position. Large cliffs indicate you should prioritize that position now."
+        help="Shows the point drop-off across the top 3 available players at each position."
     )
     for p in ['RB', 'WR', 'TE', 'QB']:
         top_tier = scored_df[scored_df['Pos'] == p].head(3)
