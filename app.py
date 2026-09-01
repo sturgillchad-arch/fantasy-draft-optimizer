@@ -217,7 +217,10 @@ with c_main:
                 return "background-color: #4f3a12; color: #ffec99; font-weight: bold;"
             return "background-color: #2b2b2b; color: #fff;"
 
-        styled_board = board_df.style.applymap(style_draft_grid)
+        try:
+    styled_board = board_df.style.map(style_draft_grid)
+except AttributeError:
+    styled_board = board_df.style.applymap(style_draft_grid)
         st.dataframe(styled_board, use_container_width=True, height=520)
 
     def format_status_badge(val):
