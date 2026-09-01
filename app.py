@@ -35,7 +35,7 @@ def fetch_player_pool():
                     proj = max(215.0 - (rank * 1.4), 25.0)
                 elif pos == 'K':
                     proj = max(135.0 - (rank * 0.15), 90.0)
-                else:
+                else:  # DST
                     proj = max(125.0 - (rank * 0.15), 75.0)
                     
                 pool.append({
@@ -66,7 +66,7 @@ def fetch_player_pool():
 
 # 3. STATE INITIALIZATION
 if 'draft_history' not in st.session_state:
-    st.session_state.draft_history = []  # Stores list of dicts: {'pick': N, 'name': str, 'pos': str, 'team': str}
+    st.session_state.draft_history = []
 if 'my_roster' not in st.session_state:
     st.session_state.my_roster = []
 if 'my_ir' not in st.session_state:
@@ -147,7 +147,6 @@ with st.sidebar.form("draft_action_form"):
     btn_submit = st.form_submit_button("Confirm Pick")
 
     if btn_submit and not scored_df.empty:
-        # Look up player details
         match = raw_df[raw_df['Name'] == selected_player]
         p_pos = match.iloc[0]['Pos'] if not match.empty else "FLEX"
         p_team = match.iloc[0]['Team'] if not match.empty else ""
@@ -185,25 +184,19 @@ with c_main:
         ["📋 Draft Board", "🔥 Best VORP", "🏃 Running Backs", "🙌 Wide Receivers", "🧱 Tight Ends", "🎯 Quarterbacks", "🛡️ D/ST & K", "🏥 Injury Hub"]
     )
 
-    # VISUAL DRAFT BOARD BUILDER
     with tab_board:
-        # Build 16-round x 10-team snake grid
         grid_data = {f"Team {i+1}": ["—"] * TOTAL_ROUNDS for i in range(NUM_TEAMS)}
         
-        # Populate drafted picks
         for item in st.session_state.draft_history:
             p_num = item['pick']
             r_idx = (p_num - 1) // NUM_TEAMS
             p_in_round = (p_num - 1) % NUM_TEAMS
-            
-            # Snake routing: Even rounds (0, 2, 4...) 1->10; Odd rounds (1, 3, 5...) 10->1
             col_idx = p_in_round if (r_idx % 2 == 0) else (NUM_TEAMS - 1 - p_in_round)
             col_name = f"Team {col_idx + 1}"
             grid_data[col_name][r_idx] = f"{item['name']} ({item['pos']})"
 
         board_df = pd.DataFrame(grid_data, index=[f"Round {r+1}" for r in range(TOTAL_ROUNDS)])
 
-        # Highlighting Slot 9 & Positional Styling
         def style_draft_grid(val):
             if "—" in val:
                 return "color: #555; background-color: #111;"
@@ -218,9 +211,10 @@ with c_main:
             return "background-color: #2b2b2b; color: #fff;"
 
         try:
-    styled_board = board_df.style.map(style_draft_grid)
-except AttributeError:
-    styled_board = board_df.style.applymap(style_draft_grid)
+            styled_board = board_df.style.map(style_draft_grid)
+        except AttributeError:
+            styled_board = board_df.style.applymap(style_draft_grid)
+
         st.dataframe(styled_board, use_container_width=True, height=520)
 
     def format_status_badge(val):
