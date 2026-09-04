@@ -46,6 +46,14 @@ my_slot = st.sidebar.selectbox(
     help="Select your draft slot (1 through N)."
 )
 
+top_n_recommendations = st.sidebar.slider(
+    "Top Targets to Highlight:",
+    min_value=5,
+    max_value=10,
+    value=7,
+    help="Number of optimal available players dynamically highlighted above the tabs every time a pick is logged."
+)
+
 TOTAL_PICKS = num_teams * total_rounds
 
 # Generate dynamic snake pick schedule for selected draft slot
@@ -267,7 +275,37 @@ TABLE_COLUMN_CONFIG = {
     "Notes": st.column_config.TextColumn("Injury Notes", help="Availability and practice notes")
 }
 
+def format_status_badge(val):
+    if val in ["IR", "Out", "Suspended"]:
+        return f"🚨 {val}"
+    elif val in ["Questionable", "Doubtful", "PUP"]:
+        return f"⚠️ {val}"
+    return "✅ Healthy"
+
+display_scored = scored_df.copy()
+display_scored['Status Badge'] = display_scored['Status'].apply(format_status_badge)
+
 with c_main:
+    # AUTO-UPDATING TOP RECOMMENDATIONS BANNER
+    st.subheader(
+        f"🎯 Top {top_n_recommendations} Draft Targets Right Now",
+        help="Automatically updates after each pick. Shows the highest-VORP players available for your roster right now, along with their odds to survive until your next turn."
+    )
+    
+    # Filter out K and DST from dominating top priority queue
+    top_targets = display_scored[~display_scored['Pos'].isin(['K', 'DST'])].sort_values(
+        by=['VORP', 'ADP'], ascending=[False, True]
+    ).head(top_n_recommendations)
+
+    st.dataframe(
+        top_targets[['Name', 'Pos', 'Team', 'ProjPts', 'VORP', 'ADP', 'Survival %', 'Status Badge']],
+        use_container_width=True,
+        hide_index=True,
+        column_config=TABLE_COLUMN_CONFIG
+    )
+
+    st.markdown("---")
+
     tab_board, tab_all, tab_rb, tab_wr, tab_te, tab_qb, tab_dst_k, tab_injury = st.tabs(
         ["📋 Draft Board", "🔥 Best VORP", "🏃 Running Backs", "🙌 Wide Receivers", "🧱 Tight Ends", "🎯 Quarterbacks", "🛡️ D/ST & K", "🏥 Injury Hub"]
     )
@@ -304,17 +342,7 @@ with c_main:
         except AttributeError:
             styled_board = board_df.style.applymap(style_draft_grid)
 
-        st.dataframe(styled_board, use_container_width=True, height=520)
-
-    def format_status_badge(val):
-        if val in ["IR", "Out", "Suspended"]:
-            return f"🚨 {val}"
-        elif val in ["Questionable", "Doubtful", "PUP"]:
-            return f"⚠️ {val}"
-        return "✅ Healthy"
-
-    display_scored = scored_df.copy()
-    display_scored['Status Badge'] = display_scored['Status'].apply(format_status_badge)
+        st.dataframe(styled_board, use_container_width=True, height=450)
 
     def render_position_table(df_subset):
         st.dataframe(
