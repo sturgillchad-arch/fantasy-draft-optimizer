@@ -92,7 +92,6 @@ def fetch_player_pool():
             if is_active and pos in ['QB', 'RB', 'WR', 'TE', 'DST', 'K'] and team in NFL_TEAMS and rank is not None and rank > 0:
                 rank = float(rank)
                 
-                # Baseline scoring projection models
                 if pos == 'QB':
                     proj = max(380.0 - (rank * 1.8), 120.0)
                 elif pos in ['RB', 'WR']:
@@ -144,7 +143,6 @@ with st.sidebar.expander("⚙️ League Settings", expanded=False):
     num_teams = st.number_input("League Size (Teams):", 6, 16, 10, 1)
     total_rounds = st.number_input("Total Rounds:", 10, 25, 16, 1)
     my_slot = st.selectbox("Draft Position:", list(range(1, num_teams + 1)), index=min(8, num_teams - 1))
-    top_n = st.slider("Top Recommendations Count:", 5, 10, 6)
 
 with st.sidebar.expander("🎮 Practice Draft Simulation", expanded=True):
     practice_toggle = st.toggle("Enable Practice Mode", value=st.session_state.practice_mode)
@@ -583,13 +581,45 @@ display_scored = scored_df.copy()
 display_scored['Status Badge'] = display_scored['Status'].apply(format_status_badge)
 
 with c_board:
-    st.markdown(f"##### 🎯 Priority Targets Available Now (Top {top_n})")
-    priority_pool = display_scored[~display_scored['Pos'].isin(['K', 'DST'])].sort_values(
+    # PRIORITY TARGET FILTER & VIEW CONTROLS
+    ctrl_title_col, ctrl_filter_col, ctrl_count_col = st.columns([1.6, 2.0, 1.4])
+    
+    with ctrl_title_col:
+        st.markdown("##### 🎯 Priority Targets")
+        
+    with ctrl_filter_col:
+        prio_pos_filter = st.pills(
+            "Filter by Position",
+            options=["ALL", "RB", "WR", "TE", "QB", "FLEX", "DST/K"],
+            default="ALL",
+            label_visibility="collapsed"
+        )
+        
+    with ctrl_count_col:
+        prio_limit = st.selectbox(
+            "Show Count",
+            options=[5, 8, 10, 15],
+            index=2,  # Default to Top 10
+            format_func=lambda x: f"Top {x} Available",
+            label_visibility="collapsed"
+        )
+
+    # Filter evaluation
+    if prio_pos_filter == "ALL":
+        target_pool = display_scored[~display_scored['Pos'].isin(['K', 'DST'])]
+    elif prio_pos_filter == "FLEX":
+        target_pool = display_scored[display_scored['Pos'].isin(['RB', 'WR', 'TE'])]
+    elif prio_pos_filter == "DST/K":
+        target_pool = display_scored[display_scored['Pos'].isin(['DST', 'K'])]
+    else:
+        target_pool = display_scored[display_scored['Pos'] == prio_pos_filter]
+
+    priority_display = target_pool.sort_values(
         by=['VORP', 'ADP'], ascending=[False, True]
-    ).head(top_n)
+    ).head(prio_limit)
 
     st.dataframe(
-        priority_pool[['Name', 'Pos', 'Team', 'ProjPts', 'VORP', 'ADP', 'Survival %', 'Action', 'Status Badge']],
+        priority_display[['Name', 'Pos', 'Team', 'ProjPts', 'VORP', 'ADP', 'Survival %', 'Action', 'Status Badge']],
         use_container_width=True,
         hide_index=True,
         column_config=TABLE_CONFIG
