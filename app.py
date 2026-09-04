@@ -69,7 +69,73 @@ if 'practice_mode' not in st.session_state:
 if 'auto_advance' not in st.session_state:
     st.session_state.auto_advance = True
 
-# 3. SIDEBAR CONFIGURATION (ACCORDIONS)
+# 3. ACTIVE NFL FRANCHISES LIST
+NFL_TEAMS = {
+    'ARI', 'ATL', 'BAL', 'BUF', 'CAR', 'CHI', 'CIN', 'CLE', 'DAL', 'DEN',
+    'DET', 'GB', 'HOU', 'IND', 'JAX', 'KC', 'LV', 'LAC', 'LAR', 'MIA',
+    'MIN', 'NE', 'NO', 'NYG', 'NYJ', 'PHI', 'PIT', 'SF', 'SEA', 'TB', 'TEN', 'WAS'
+}
+
+# 4. ROBUST DATA ENGINE (15-Min TTL + Granular Injury Mapping)
+@st.cache_data(ttl=900)
+def fetch_player_pool():
+    try:
+        url = "https://api.sleeper.app/v1/players/nfl"
+        res = requests.get(url, timeout=12).json()
+        pool = []
+        for p_id, p in res.items():
+            pos = 'DST' if p.get('position') == 'DEF' else p.get('position')
+            team = p.get('team')
+            rank = p.get('search_rank')
+            is_active = p.get("active", False)
+
+            if is_active and pos in ['QB', 'RB', 'WR', 'TE', 'DST', 'K'] and team in NFL_TEAMS and rank is not None and rank > 0:
+                rank = float(rank)
+                
+                # Baseline scoring projection models
+                if pos == 'QB':
+                    proj = max(380.0 - (rank * 1.8), 120.0)
+                elif pos in ['RB', 'WR']:
+                    proj = max(295.0 - (rank * 1.3), 35.0)
+                elif pos == 'TE':
+                    proj = max(215.0 - (rank * 1.4), 25.0)
+                elif pos == 'K':
+                    proj = max(135.0 - (rank * 0.15), 90.0)
+                else:
+                    proj = max(125.0 - (rank * 0.15), 75.0)
+                
+                inj_status = p.get("injury_status") or "Healthy"
+                inj_body = p.get("injury_body_part")
+                inj_notes = p.get("injury_notes") or p.get("news_updated") or "Active"
+                detailed_notes = f"{inj_body}: {inj_notes}" if inj_body else inj_notes
+
+                pool.append({
+                    "Name": p.get("full_name") or f"{p.get('first_name')} {p.get('last_name')}",
+                    "Pos": pos,
+                    "Team": team,
+                    "ADP": rank,
+                    "ProjPts": round(proj, 1),
+                    "Status": inj_status,
+                    "Notes": detailed_notes
+                })
+        df = pd.DataFrame(pool).sort_values(by="ADP").reset_index(drop=True)
+        return df
+    except Exception:
+        data = [
+            {"Name": "Jahmyr Gibbs", "Pos": "RB", "Team": "DET", "ADP": 1.0, "ProjPts": 330.0, "Status": "Healthy", "Notes": "Active"},
+            {"Name": "Bijan Robinson", "Pos": "RB", "Team": "ATL", "ADP": 2.0, "ProjPts": 314.0, "Status": "Healthy", "Notes": "Active"},
+            {"Name": "Ja'Marr Chase", "Pos": "WR", "Team": "CIN", "ADP": 3.0, "ProjPts": 277.0, "Status": "Healthy", "Notes": "Active"},
+            {"Name": "Puka Nacua", "Pos": "WR", "Team": "LAR", "ADP": 4.0, "ProjPts": 275.0, "Status": "Healthy", "Notes": "Active"},
+            {"Name": "Jonathan Taylor", "Pos": "RB", "Team": "IND", "ADP": 6.0, "ProjPts": 265.0, "Status": "Healthy", "Notes": "Active"},
+            {"Name": "Amon-Ra St. Brown", "Pos": "WR", "Team": "DET", "ADP": 8.0, "ProjPts": 270.0, "Status": "Healthy", "Notes": "Active"},
+            {"Name": "A.J. Brown", "Pos": "WR", "Team": "PHI", "ADP": 10.0, "ProjPts": 255.0, "Status": "Healthy", "Notes": "Active"},
+            {"Name": "Saquon Barkley", "Pos": "RB", "Team": "PHI", "ADP": 11.0, "ProjPts": 256.0, "Status": "Healthy", "Notes": "Active"},
+            {"Name": "Brock Bowers", "Pos": "TE", "Team": "LV", "ADP": 20.0, "ProjPts": 210.0, "Status": "Healthy", "Notes": "Active"},
+            {"Name": "Josh Allen", "Pos": "QB", "Team": "BUF", "ADP": 22.0, "ProjPts": 375.0, "Status": "Healthy", "Notes": "Active"},
+        ]
+        return pd.DataFrame(data)
+
+# 5. SIDEBAR CONFIGURATION (ACCORDIONS)
 with st.sidebar.expander("⏱️ Draft Clock & Audio Settings", expanded=False):
     clock_seconds = st.number_input("Clock Duration (Seconds):", min_value=15, max_value=300, value=60, step=5)
     enable_sound = st.toggle("Enable Audio Warnings", value=True, help="Plays countdown beeps at 10s and an alarm at 0s using Web Audio API.")
@@ -95,6 +161,11 @@ with st.sidebar.expander("🎮 Practice Draft Simulation", expanded=True):
 
 with st.sidebar.expander("📂 Data Feeds & Backup", expanded=False):
     uploaded = st.file_uploader("Upload Projections CSV", type=["csv"])
+    
+    if st.button("🔄 Sync Fresh NFL Wire Data", help="Clears cache and forces an immediate reload of player depth charts and injury wires."):
+        fetch_player_pool.clear()
+        st.rerun()
+
     if st.button("Reset Entire Draft Board", type="secondary"):
         st.session_state.draft_history = []
         st.session_state.my_roster = []
@@ -118,69 +189,9 @@ def generate_my_picks(slot, teams, rounds):
 my_picks = generate_my_picks(my_slot, num_teams, total_rounds)
 BASELINES = {'QB': num_teams, 'RB': int(num_teams * 3.0), 'WR': int(num_teams * 3.0), 'TE': num_teams, 'DST': num_teams, 'K': num_teams}
 
-# 4. ROBUST DATA ENGINE (Active NFL Rosters Only)
-NFL_TEAMS = {
-    'ARI', 'ATL', 'BAL', 'BUF', 'CAR', 'CHI', 'CIN', 'CLE', 'DAL', 'DEN',
-    'DET', 'GB', 'HOU', 'IND', 'JAX', 'KC', 'LV', 'LAC', 'LAR', 'MIA',
-    'MIN', 'NE', 'NO', 'NYG', 'NYJ', 'PHI', 'PIT', 'SF', 'SEA', 'TB', 'TEN', 'WAS'
-}
-
-@st.cache_data(ttl=3600)
-def fetch_player_pool():
-    try:
-        url = "https://api.sleeper.app/v1/players/nfl"
-        res = requests.get(url, timeout=12).json()
-        pool = []
-        for p_id, p in res.items():
-            pos = 'DST' if p.get('position') == 'DEF' else p.get('position')
-            team = p.get('team')
-            rank = p.get('search_rank')
-
-            # FILTER: Must be on an active 32-team NFL franchise, active flag true, and have a valid search rank
-            if p.get("active") and pos in ['QB', 'RB', 'WR', 'TE', 'DST', 'K'] and team in NFL_TEAMS and rank is not None and rank > 0:
-                rank = float(rank)
-                
-                # Baseline scoring curves
-                if pos == 'QB':
-                    proj = max(380.0 - (rank * 1.8), 120.0)
-                elif pos in ['RB', 'WR']:
-                    proj = max(295.0 - (rank * 1.3), 35.0)
-                elif pos == 'TE':
-                    proj = max(215.0 - (rank * 1.4), 25.0)
-                elif pos == 'K':
-                    proj = max(135.0 - (rank * 0.15), 90.0)
-                else:  # DST
-                    proj = max(125.0 - (rank * 0.15), 75.0)
-                    
-                pool.append({
-                    "Name": p.get("full_name") or f"{p.get('first_name')} {p.get('last_name')}",
-                    "Pos": pos,
-                    "Team": team,
-                    "ADP": rank,
-                    "ProjPts": round(proj, 1),
-                    "Status": p.get("injury_status") or "Healthy",
-                    "Notes": p.get("injury_notes") or "Active"
-                })
-        df = pd.DataFrame(pool).sort_values(by="ADP").reset_index(drop=True)
-        return df
-    except Exception:
-        data = [
-            {"Name": "Jahmyr Gibbs", "Pos": "RB", "Team": "DET", "ADP": 1.0, "ProjPts": 330.0, "Status": "Healthy", "Notes": "Active"},
-            {"Name": "Bijan Robinson", "Pos": "RB", "Team": "ATL", "ADP": 2.0, "ProjPts": 314.0, "Status": "Healthy", "Notes": "Active"},
-            {"Name": "Ja'Marr Chase", "Pos": "WR", "Team": "CIN", "ADP": 3.0, "ProjPts": 277.0, "Status": "Healthy", "Notes": "Active"},
-            {"Name": "Puka Nacua", "Pos": "WR", "Team": "LAR", "ADP": 4.0, "ProjPts": 275.0, "Status": "Healthy", "Notes": "Active"},
-            {"Name": "Jonathan Taylor", "Pos": "RB", "Team": "IND", "ADP": 6.0, "ProjPts": 265.0, "Status": "Healthy", "Notes": "Active"},
-            {"Name": "Amon-Ra St. Brown", "Pos": "WR", "Team": "DET", "ADP": 8.0, "ProjPts": 270.0, "Status": "Healthy", "Notes": "Active"},
-            {"Name": "A.J. Brown", "Pos": "WR", "Team": "PHI", "ADP": 10.0, "ProjPts": 255.0, "Status": "Healthy", "Notes": "Active"},
-            {"Name": "Saquon Barkley", "Pos": "RB", "Team": "PHI", "ADP": 11.0, "ProjPts": 256.0, "Status": "Healthy", "Notes": "Active"},
-            {"Name": "Brock Bowers", "Pos": "TE", "Team": "LV", "ADP": 20.0, "ProjPts": 210.0, "Status": "Healthy", "Notes": "Active"},
-            {"Name": "Josh Allen", "Pos": "QB", "Team": "BUF", "ADP": 22.0, "ProjPts": 375.0, "Status": "Healthy", "Notes": "Active"},
-        ]
-        return pd.DataFrame(data)
-
 raw_df = pd.read_csv(uploaded) if uploaded else fetch_player_pool()
 
-# 5. AI BOT SIMULATION FUNCTION
+# 6. AI BOT SIMULATION FUNCTION
 def simulate_bot_picks(target_pick):
     scale_dict = {"Strict ADP": 0.8, "Realistic Variance": 3.0, "Chaotic Reach": 6.5}
     curr_scale = scale_dict.get(ai_randomness, 3.0)
@@ -213,7 +224,7 @@ if st.session_state.practice_mode and st.session_state.auto_advance and st.sessi
 
 drafted_names = [d['name'] for d in st.session_state.draft_history]
 
-# 6. DYNAMIC VORP ENGINE
+# 7. DYNAMIC VORP ENGINE
 def calculate_dynamic_vorp(df, my_roster_names):
     df_calc = df.copy()
     my_players = df_calc[df_calc['Name'].isin(my_roster_names)]
@@ -236,7 +247,7 @@ def calculate_dynamic_vorp(df, my_roster_names):
 available_df = raw_df[~raw_df['Name'].isin(drafted_names)].copy()
 scored_df = calculate_dynamic_vorp(available_df, st.session_state.my_roster)
 
-# 7. TURN CADENCE & SIMULATION
+# 8. TURN CADENCE & SIMULATION
 curr_p = st.session_state.current_pick
 is_turn = curr_p in my_picks
 
@@ -263,7 +274,7 @@ def strategy_tag(row):
 
 scored_df['Action'] = scored_df.apply(strategy_tag, axis=1)
 
-# 8. EXECUTIVE HUD
+# 9. EXECUTIVE HUD
 curr_round = ((curr_p - 1) // num_teams) + 1
 next_picks = [p for p in my_picks if p >= curr_p]
 
@@ -320,7 +331,7 @@ with h4:
     </div>
     """, unsafe_allow_html=True)
 
-# 9. DRAFT COUNTDOWN CLOCK COMPONENT
+# 10. DRAFT COUNTDOWN CLOCK COMPONENT
 clock_html = f"""
 <div id="clock-container" style="
     background: #111827;
@@ -471,7 +482,7 @@ clock_html = f"""
 """
 components.html(clock_html, height=72)
 
-# 10. IN-LINE ACTION CONSOLE
+# 11. IN-LINE ACTION CONSOLE
 with st.container():
     act_col1, act_col2, act_col3, act_col4, act_col5 = st.columns([2.8, 1.1, 1.0, 1.3, 0.9])
     with act_col1:
@@ -545,7 +556,7 @@ with st.container():
 
 st.markdown("---")
 
-# 11. TERMINAL SPLIT: WORKSPACE & ROSTER
+# 12. TERMINAL SPLIT: WORKSPACE & ROSTER
 c_board, c_roster = st.columns([3.1, 1.9])
 
 TABLE_CONFIG = {
