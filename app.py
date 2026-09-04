@@ -94,7 +94,6 @@ st.markdown("""
         background-color: var(--war-row-hover);
     }
 
-    /* Interactive Sortable Header Buttons */
     .stButton.sort-hdr > button {
         background: transparent !important;
         border: none !important;
@@ -150,7 +149,6 @@ if 'practice_mode' not in st.session_state:
 if 'auto_advance' not in st.session_state:
     st.session_state.auto_advance = True
 
-# SORT STATE INITIALIZATION
 if 'sort_col' not in st.session_state:
     st.session_state.sort_col = 'VORP'
 if 'sort_asc' not in st.session_state:
@@ -462,9 +460,9 @@ with h4:
     </div>
     """, unsafe_allow_html=True)
 
-# 10. DRAFT COUNTDOWN CLOCK COMPONENT (THEME-ADAPTIVE)
+# 10. DRAFT COUNTDOWN CLOCK COMPONENT (AUTO-RESETS ON ANY PICK)
 clock_html = f"""
-<div id="clock-container" style="
+<div id="clock-container" data-pick="{curr_p}" style="
     background: var(--war-bg-card, #ffffff);
     border: 2px solid {'#dc2626' if is_turn else '#cbd5e1'};
     border-radius: 8px;
@@ -513,6 +511,7 @@ clock_html = f"""
 </div>
 
 <script>
+    const currentPickInstance = {curr_p};
     let duration = {clock_seconds};
     let remaining = duration;
     let isRunning = true;
@@ -550,6 +549,7 @@ clock_html = f"""
 
     function updateDisplay() {{
         const el = document.getElementById('timer-display');
+        if (!el) return;
         const mins = Math.floor(remaining / 60);
         const secs = remaining % 60;
         el.innerText = (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs;
@@ -577,7 +577,8 @@ clock_html = f"""
         }} else {{
             clearInterval(timerInterval);
             isRunning = false;
-            document.getElementById('btn-toggle').innerText = 'Start';
+            const btn = document.getElementById('btn-toggle');
+            if (btn) btn.innerText = 'Start';
         }}
     }}
 
@@ -585,7 +586,8 @@ clock_html = f"""
         clearInterval(timerInterval);
         timerInterval = setInterval(tick, 1000);
         isRunning = true;
-        document.getElementById('btn-toggle').innerText = 'Pause';
+        const btn = document.getElementById('btn-toggle');
+        if (btn) btn.innerText = 'Pause';
     }}
 
     function toggleClock() {{
@@ -593,7 +595,8 @@ clock_html = f"""
         if (isRunning) {{
             clearInterval(timerInterval);
             isRunning = false;
-            document.getElementById('btn-toggle').innerText = 'Start';
+            const btn = document.getElementById('btn-toggle');
+            if (btn) btn.innerText = 'Start';
         }} else {{
             if (remaining <= 0) remaining = duration;
             startTimer();
@@ -608,8 +611,8 @@ clock_html = f"""
         startTimer();
     }}
 
-    updateDisplay();
-    startTimer();
+    // Clean reset triggered on every instance mount / pick progression
+    resetClock();
 </script>
 """
 components.html(clock_html, height=72)
@@ -744,7 +747,6 @@ with c_board:
             by=[sort_col, 'VORP'], ascending=[sort_asc, False]
         ).head(prio_limit).reset_index(drop=True)
 
-    # Helper icon generator for header indicators
     def sort_indicator(col_name):
         if st.session_state.sort_col == col_name:
             return " ▲" if st.session_state.sort_asc else " ▼"
