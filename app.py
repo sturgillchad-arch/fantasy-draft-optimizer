@@ -52,6 +52,27 @@ st.markdown("""
         text-transform: uppercase !important;
         letter-spacing: 0.03em !important;
     }
+    /* Compact Row Styling for Priority Targets List */
+    .prio-row {
+        display: flex;
+        align-items: center;
+        background: #111827;
+        border: 1px solid #1f2937;
+        border-radius: 6px;
+        padding: 6px 12px;
+        margin-bottom: 5px;
+    }
+    .badge-pos {
+        font-size: 0.75rem;
+        font-weight: 700;
+        padding: 2px 6px;
+        border-radius: 4px;
+    }
+    .badge-rb { background-color: #1e3a8a; color: #bfdbfe; }
+    .badge-wr { background-color: #064e3b; color: #a7f3d0; }
+    .badge-qb { background-color: #7c2d12; color: #fed7aa; }
+    .badge-te { background-color: #713f12; color: #fef08a; }
+    .badge-other { background-color: #374151; color: #f3f4f6; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -265,12 +286,43 @@ scored_df['Survival %'] = scored_df['ADP'].apply(lambda x: simulate_survival(x, 
 
 def strategy_tag(row):
     if row['Survival %'] >= 80:
-        return "⏳ Safe to Wait"
+        return "⏳ Safe"
     elif row['Survival %'] <= 25:
-        return "⚡ Draft Now"
-    return "⚖️ Moderate"
+        return "⚡ Draft"
+    return "⚖️ Mid"
 
 scored_df['Action'] = scored_df.apply(strategy_tag, axis=1)
+
+# Helper function to execute a draft pick selection
+def execute_pick(player_name, is_my_pick, stash_to_ir=False):
+    match = raw_df[raw_df['Name'] == player_name]
+    p_pos = match.iloc[0]['Pos'] if not match.empty else "FLEX"
+    p_team = match.iloc[0]['Team'] if not match.empty else ""
+
+    st.session_state.draft_history.append({
+        'pick': st.session_state.current_pick,
+        'name': player_name,
+        'pos': p_pos,
+        'team': p_team,
+        'is_mine': is_my_pick,
+        'is_ir': (is_my_pick and stash_to_ir and len(st.session_state.my_ir) == 0)
+    })
+
+    if is_my_pick:
+        if stash_to_ir and len(st.session_state.my_ir) == 0:
+            st.session_state.my_ir.append(player_name)
+        else:
+            st.session_state.my_roster.append(player_name)
+
+    st.session_state.current_pick += 1
+
+    if st.session_state.practice_mode and st.session_state.auto_advance:
+        next_user_pick = [p for p in my_picks if p >= st.session_state.current_pick]
+        if next_user_pick:
+            simulate_bot_picks(next_user_pick[0])
+        else:
+            simulate_bot_picks(TOTAL_PICKS + 1)
+    st.rerun()
 
 # 9. EXECUTIVE HUD
 curr_round = ((curr_p - 1) // num_teams) + 1
@@ -497,35 +549,7 @@ with st.container():
     with act_col4:
         if st.button("Confirm Pick ↵", type="primary", use_container_width=True):
             if not scored_df.empty:
-                match = raw_df[raw_df['Name'] == selected_player]
-                p_pos = match.iloc[0]['Pos'] if not match.empty else "FLEX"
-                p_team = match.iloc[0]['Team'] if not match.empty else ""
-
-                st.session_state.draft_history.append({
-                    'pick': curr_p,
-                    'name': selected_player,
-                    'pos': p_pos,
-                    'team': p_team,
-                    'is_mine': mine,
-                    'is_ir': (mine and send_to_ir and len(st.session_state.my_ir) == 0)
-                })
-
-                if mine:
-                    if send_to_ir and len(st.session_state.my_ir) == 0:
-                        st.session_state.my_ir.append(selected_player)
-                    else:
-                        st.session_state.my_roster.append(selected_player)
-                
-                st.session_state.current_pick += 1
-                
-                if st.session_state.practice_mode and st.session_state.auto_advance:
-                    next_user_pick = [p for p in my_picks if p >= st.session_state.current_pick]
-                    if next_user_pick:
-                        simulate_bot_picks(next_user_pick[0])
-                    else:
-                        simulate_bot_picks(TOTAL_PICKS + 1)
-                        
-                st.rerun()
+                execute_pick(selected_player, mine, send_to_ir)
 
     with act_col5:
         if st.button("↩ Undo", help="Revert the last pick logged", use_container_width=True):
@@ -581,7 +605,7 @@ display_scored = scored_df.copy()
 display_scored['Status Badge'] = display_scored['Status'].apply(format_status_badge)
 
 with c_board:
-    # PRIORITY TARGET FILTER & VIEW CONTROLS
+    # PRIORITY TARGET CONTROLS (PILLS + SHOW COUNT)
     ctrl_title_col, ctrl_filter_col, ctrl_count_col = st.columns([1.6, 2.0, 1.4])
     
     with ctrl_title_col:
@@ -604,7 +628,7 @@ with c_board:
             label_visibility="collapsed"
         )
 
-    # Filter evaluation
+    # Filter pool based on pills
     if prio_pos_filter == "ALL":
         target_pool = display_scored[~display_scored['Pos'].isin(['K', 'DST'])]
     elif prio_pos_filter == "FLEX":
@@ -616,15 +640,66 @@ with c_board:
 
     priority_display = target_pool.sort_values(
         by=['VORP', 'ADP'], ascending=[False, True]
-    ).head(prio_limit)
+    ).head(prio_limit).reset_index(drop=True)
 
-    st.dataframe(
-        priority_display[['Name', 'Pos', 'Team', 'ProjPts', 'VORP', 'ADP', 'Survival %', 'Action', 'Status Badge']],
-        use_container_width=True,
-        hide_index=True,
-        column_config=TABLE_CONFIG
-    )
+    # ROW-BY-ROW PRIORITY VIEW WITH DIRECT DRAFT BUTTONS
+    st.markdown("""
+    <div style="display: flex; color: #9ca3af; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; padding: 4px 12px; margin-bottom: 2px;">
+        <div style="flex: 1.2;">Action</div>
+        <div style="flex: 3.5;">Player</div>
+        <div style="flex: 1.0;">Pos</div>
+        <div style="flex: 1.0;">Team</div>
+        <div style="flex: 1.4; text-align: right;">Proj Pts</div>
+        <div style="flex: 1.4; text-align: right;">VORP</div>
+        <div style="flex: 1.2; text-align: right;">ADP</div>
+        <div style="flex: 1.8; text-align: right;">Survival</div>
+        <div style="flex: 1.4; text-align: right;">Verdict</div>
+    </div>
+    """, unsafe_allow_html=True)
 
+    if priority_display.empty:
+        st.info("No available players matching this positional filter.")
+    else:
+        for idx, row in priority_display.iterrows():
+            c_btn, c_name, c_pos, c_team, c_proj, c_vorp, c_adp, c_surv, c_act = st.columns(
+                [1.2, 3.5, 1.0, 1.0, 1.4, 1.4, 1.2, 1.8, 1.4]
+            )
+
+            with c_btn:
+                if st.button("Draft", key=f"btn_prio_draft_{row['Name']}_{idx}", type="secondary", use_container_width=True):
+                    execute_pick(row['Name'], is_my_pick=True)
+
+            with c_name:
+                health_icon = "🚨 " if row['Status'] in ["IR", "Out", "Suspended"] else ("⚠️ " if row['Status'] in ["Questionable", "Doubtful", "PUP"] else "")
+                st.markdown(f"<div style='font-size: 0.88rem; font-weight: 700; color: #f9fafb; padding-top: 4px;'>{health_icon}{row['Name']}</div>", unsafe_allow_html=True)
+
+            with c_pos:
+                badge_class = f"badge-{row['Pos'].lower()}" if row['Pos'] in ['RB', 'WR', 'QB', 'TE'] else "badge-other"
+                st.markdown(f"<div style='padding-top: 4px;'><span class='badge-pos {badge_class}'>{row['Pos']}</span></div>", unsafe_allow_html=True)
+
+            with c_team:
+                st.markdown(f"<div style='font-size: 0.82rem; color: #9ca3af; padding-top: 4px;'>{row['Team']}</div>", unsafe_allow_html=True)
+
+            with c_proj:
+                st.markdown(f"<div style='font-size: 0.85rem; font-weight: 600; color: #d1d5db; text-align: right; padding-top: 4px;'>{row['ProjPts']:.1f}</div>", unsafe_allow_html=True)
+
+            with c_vorp:
+                st.markdown(f"<div style='font-size: 0.85rem; font-weight: 700; color: #60a5fa; text-align: right; padding-top: 4px;'>+{row['VORP']:.1f}</div>", unsafe_allow_html=True)
+
+            with c_adp:
+                st.markdown(f"<div style='font-size: 0.82rem; color: #9ca3af; text-align: right; padding-top: 4px;'>{row['ADP']:.0f}</div>", unsafe_allow_html=True)
+
+            with c_surv:
+                surv_color = "#10b981" if row['Survival %'] >= 70 else ("#f59e0b" if row['Survival %'] >= 35 else "#ef4444")
+                st.markdown(f"<div style='font-size: 0.85rem; font-weight: 700; color: {surv_color}; text-align: right; padding-top: 4px;'>{row['Survival %']}%</div>", unsafe_allow_html=True)
+
+            with c_act:
+                act_color = "#3b82f6" if "Safe" in row['Action'] else ("#ef4444" if "Draft" in row['Action'] else "#9ca3af")
+                st.markdown(f"<div style='font-size: 0.8rem; font-weight: 600; color: {act_color}; text-align: right; padding-top: 4px;'>{row['Action']}</div>", unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # POSITIONAL TABS & DRAFT BOARD
     tab_board, tab_all, tab_rb, tab_wr, tab_te, tab_qb, tab_dst_k, tab_injury = st.tabs(
         ["📋 Visual Grid", "🔥 All VORP", "🏃 RB", "🙌 WR", "🧱 TE", "🎯 QB", "🛡️ D/ST & K", "🏥 IR Hub"]
     )
