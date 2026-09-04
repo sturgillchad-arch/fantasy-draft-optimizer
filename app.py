@@ -12,17 +12,16 @@ st.set_page_config(
 # 1. MODERN TERMINAL CSS INJECTION
 st.markdown("""
 <style>
-    /* Metric & Card Ergonomics */
     .metric-card {
         background-color: #111827;
         border: 1px solid #1f2937;
         border-radius: 8px;
         padding: 12px 16px;
-        margin-bottom: 12px;
+        margin-bottom: 8px;
     }
     .hud-title {
         color: #9ca3af;
-        font-size: 0.75rem;
+        font-size: 0.72rem;
         text-transform: uppercase;
         letter-spacing: 0.05em;
         margin-bottom: 4px;
@@ -30,7 +29,7 @@ st.markdown("""
     }
     .hud-value {
         color: #f9fafb;
-        font-size: 1.35rem;
+        font-size: 1.3rem;
         font-weight: 700;
         line-height: 1.2;
     }
@@ -39,7 +38,6 @@ st.markdown("""
         font-size: 0.75rem;
         font-weight: 500;
     }
-    /* Tab & Grid density */
     .stTabs [data-baseweb="tab-list"] {
         gap: 4px;
     }
@@ -48,9 +46,8 @@ st.markdown("""
         font-size: 0.85rem;
         border-radius: 6px 6px 0 0;
     }
-    /* Streamline Dataframe headers */
     thead tr th {
-        font-size: 0.8rem !important;
+        font-size: 0.78rem !important;
         text-transform: uppercase !important;
         letter-spacing: 0.03em !important;
     }
@@ -97,7 +94,6 @@ def generate_my_picks(slot, teams, rounds):
     return picks
 
 my_picks = generate_my_picks(my_slot, num_teams, total_rounds)
-
 BASELINES = {'QB': num_teams, 'RB': int(num_teams * 3.0), 'WR': int(num_teams * 3.0), 'TE': num_teams, 'DST': num_teams, 'K': num_teams}
 
 # 4. DATA ENGINE (Sleeper Public API)
@@ -192,7 +188,17 @@ def simulate_survival(adp, current_pick, target_gap, n_sims=300):
 
 scored_df['Survival %'] = scored_df['ADP'].apply(lambda x: simulate_survival(x, curr_p, gap))
 
-# 7. EXECUTIVE HUD (HEADS-UP DISPLAY)
+# Strategy Advisor Recommendation Tag
+def strategy_tag(row):
+    if row['Survival %'] >= 80:
+        return "⏳ Safe to Wait"
+    elif row['Survival %'] <= 25:
+        return "⚡ Draft Now"
+    return "⚖️ Moderate"
+
+scored_df['Action'] = scored_df.apply(strategy_tag, axis=1)
+
+# 7. EXECUTIVE HUD
 curr_round = ((curr_p - 1) // num_teams) + 1
 next_picks = [p for p in my_picks if p >= curr_p]
 
@@ -248,15 +254,15 @@ with h4:
     </div>
     """, unsafe_allow_html=True)
 
-# 8. IN-LINE DRAFT ACTION CONSOLE
+# 8. IN-LINE DRAFT ACTION CONSOLE + UNDO BUTTON
 with st.container():
-    act_col1, act_col2, act_col3, act_col4 = st.columns([3, 1.2, 1.2, 1.4])
+    act_col1, act_col2, act_col3, act_col4, act_col5 = st.columns([2.8, 1.1, 1.0, 1.3, 0.9])
     with act_col1:
         selected_player = st.selectbox(
             "Quick Log Draft Pick:",
             options=scored_df['Name'].tolist() if not scored_df.empty else ["Pool Empty"],
             label_visibility="collapsed",
-            help="Type to search and log any player drafted."
+            help="Search and log any drafted player."
         )
     with act_col2:
         mine = st.checkbox("Draft to My Team", value=is_turn)
@@ -274,7 +280,8 @@ with st.container():
                     'name': selected_player,
                     'pos': p_pos,
                     'team': p_team,
-                    'is_mine': mine
+                    'is_mine': mine,
+                    'is_ir': (mine and send_to_ir and len(st.session_state.my_ir) == 0)
                 })
 
                 if mine:
@@ -284,13 +291,24 @@ with st.container():
                         st.session_state.my_roster.append(selected_player)
                 st.session_state.current_pick += 1
                 st.rerun()
+    with act_col5:
+        if st.button("↩ Undo", help="Revert the last pick logged", use_container_width=True):
+            if st.session_state.draft_history:
+                last_pick = st.session_state.draft_history.pop()
+                p_name = last_pick['name']
+                if last_pick['is_mine']:
+                    if last_pick['is_ir'] and p_name in st.session_state.my_ir:
+                        st.session_state.my_ir.remove(p_name)
+                    elif p_name in st.session_state.my_roster:
+                        st.session_state.my_roster.remove(p_name)
+                st.session_state.current_pick = max(1, st.session_state.current_pick - 1)
+                st.rerun()
 
 st.markdown("---")
 
-# 9. DUAL TERMINAL SPLIT: WORKSPACE (LEFT) & LINEUP TRACKER (RIGHT)
+# 9. TERMINAL SPLIT: WORKSPACE & ROSTER
 c_board, c_roster = st.columns([3.1, 1.9])
 
-# Table Formats
 TABLE_CONFIG = {
     "Name": st.column_config.TextColumn("Player"),
     "Pos": st.column_config.TextColumn("Pos", width="small"),
@@ -299,6 +317,7 @@ TABLE_CONFIG = {
     "VORP": st.column_config.NumberColumn("VORP", format="%.1f"),
     "ADP": st.column_config.NumberColumn("ADP", format="%.0f"),
     "Survival %": st.column_config.ProgressColumn("Survival Odds", format="%d%%", min_value=0, max_value=100),
+    "Action": st.column_config.TextColumn("Verdict", width="small"),
     "Status Badge": st.column_config.TextColumn("Health", width="small"),
     "Notes": st.column_config.TextColumn("Report")
 }
@@ -314,27 +333,25 @@ display_scored = scored_df.copy()
 display_scored['Status Badge'] = display_scored['Status'].apply(format_status_badge)
 
 with c_board:
-    # Top Priority Recommendations Card
     st.markdown(f"##### 🎯 Priority Targets Available Now (Top {top_n})")
     priority_pool = display_scored[~display_scored['Pos'].isin(['K', 'DST'])].sort_values(
         by=['VORP', 'ADP'], ascending=[False, True]
     ).head(top_n)
 
     st.dataframe(
-        priority_pool[['Name', 'Pos', 'Team', 'ProjPts', 'VORP', 'ADP', 'Survival %', 'Status Badge']],
+        priority_pool[['Name', 'Pos', 'Team', 'ProjPts', 'VORP', 'ADP', 'Survival %', 'Action', 'Status Badge']],
         use_container_width=True,
         hide_index=True,
         column_config=TABLE_CONFIG
     )
 
-    # Positional & Board Views
     tab_board, tab_all, tab_rb, tab_wr, tab_te, tab_qb, tab_dst_k, tab_injury = st.tabs(
         ["📋 Visual Grid", "🔥 All VORP", "🏃 RB", "🙌 WR", "🧱 TE", "🎯 QB", "🛡️ D/ST & K", "🏥 IR Hub"]
     )
 
     def render_pos_table(df_sub):
         st.dataframe(
-            df_sub[['Name', 'Pos', 'Team', 'ProjPts', 'VORP', 'ADP', 'Survival %', 'Status Badge', 'Notes']]
+            df_sub[['Name', 'Pos', 'Team', 'ProjPts', 'VORP', 'ADP', 'Survival %', 'Action', 'Status Badge', 'Notes']]
             .sort_values(by=['VORP', 'ADP'], ascending=[False, True]),
             use_container_width=True,
             hide_index=True,
@@ -397,7 +414,6 @@ with c_board:
 with c_roster:
     st.markdown("##### 🛡️ Lineup Depth Chart")
     
-    # Formatted Roster Construction
     roster_pool = raw_df[raw_df['Name'].isin(st.session_state.my_roster)].copy()
     
     def get_slot_assignment(pos, taken_slots):
@@ -420,7 +436,6 @@ with c_roster:
     te = (get_slot_assignment('TE', taken) + ["—"])[0]
     taken.append(te)
     
-    # Flex: Remaining RB/WR/TE
     flex_candidates = [p for p in roster_pool[roster_pool['Pos'].isin(['RB', 'WR', 'TE'])]['Name'].tolist() if p not in taken and p != "—"]
     flex = flex_candidates[0] if flex_candidates else "—"
     taken.append(flex)
