@@ -55,7 +55,6 @@ st.markdown("""
         --war-row-hover: #1e293b;
     }
 
-    /* Base Containers */
     .metric-card {
         background-color: var(--war-bg-card);
         border: 2px solid var(--war-border);
@@ -134,9 +133,7 @@ st.markdown("""
     .badge-te { background-color: #d97706; color: #ffffff; }
     .badge-other { background-color: #475569; color: #ffffff; }
 
-    /* =====================================================
-       MOBILE RESPONSIVE OVERRIDES (< 768px Screens)
-       ===================================================== */
+    /* CSS-driven Mobile Responsiveness */
     @media (max-width: 768px) {
         .block-container {
             padding-top: 0.5rem !important;
@@ -156,7 +153,7 @@ st.markdown("""
         }
         button {
             touch-action: manipulation;
-            min-height: 42px !important;
+            min-height: 40px !important;
         }
         .desktop-hdr {
             display: none !important;
@@ -207,7 +204,7 @@ NFL_TEAMS = {
     'MIN', 'NE', 'NO', 'NYG', 'NYJ', 'PHI', 'PIT', 'SF', 'SEA', 'TB', 'TEN', 'WAS'
 }
 
-# 4. DATA ENGINE (15-Min TTL + Granular Injury Mapping)
+# 4. ROBUST DATA ENGINE (15-Min TTL + Granular Injury Mapping)
 @st.cache_data(ttl=900)
 def fetch_player_pool():
     try:
@@ -265,7 +262,7 @@ def fetch_player_pool():
         ]
         return pd.DataFrame(data)
 
-# 5. SIDEBAR CONFIGURATION (ACCORDIONS)
+# 5. SIDEBAR CONFIGURATION
 with st.sidebar.expander("⏱️ Draft Clock & Audio Settings", expanded=False):
     clock_seconds = st.number_input("Clock Duration (Seconds):", min_value=15, max_value=300, value=60, step=5)
     enable_sound = st.toggle("Enable Audio Warnings", value=True, help="Plays countdown beeps at 10s and an alarm at 0s using Web Audio API.")
@@ -428,16 +425,13 @@ def execute_pick(player_name, is_my_pick, stash_to_ir=False):
             simulate_bot_picks(TOTAL_PICKS + 1)
     st.rerun()
 
-# 9. EXECUTIVE HUD (2x2 GRID ON MOBILE, 1x4 ON DESKTOP)
+# 9. EXECUTIVE HUD (FIXED: Exactly 4 columns without dynamic unpacking)
 curr_round = min(((curr_p - 1) // num_teams) + 1, total_rounds)
 next_picks = [p for p in my_picks if p >= curr_p]
 
-hud_c1, hud_c2 = st.columns(2) if st.session_state.get('_is_mobile', False) else st.columns([1.2, 1.4, 1.6, 1.8])
+h1, h2, h3, h4 = st.columns([1.2, 1.4, 1.6, 1.8])
 
-# Render Columns Adaptively
-h_cols = st.columns([1.2, 1.4, 1.6, 1.8])
-
-with h_cols[0]:
+with h1:
     mode_label = "🎮 PRACTICE (AUTO)" if (st.session_state.practice_mode and st.session_state.auto_advance) else ("🎮 PRACTICE" if st.session_state.practice_mode else "LIVE WAR ROOM")
     remaining_picks = max(0, TOTAL_PICKS - curr_p + 1)
     st.markdown(f"""
@@ -448,7 +442,7 @@ with h_cols[0]:
     </div>
     """, unsafe_allow_html=True)
 
-with h_cols[1]:
+with h2:
     if curr_p > TOTAL_PICKS:
         status_text = "🏁 COMPLETED"
         status_color = "#059669"
@@ -463,7 +457,7 @@ with h_cols[1]:
     </div>
     """, unsafe_allow_html=True)
 
-with h_cols[2]:
+with h3:
     if len(next_picks) >= 2:
         flow_text = f"#{next_picks[0]} ➔ #{next_picks[1]}"
         sub_text = f"Gap: {next_picks[1] - next_picks[0]} picks"
@@ -482,7 +476,7 @@ with h_cols[2]:
     </div>
     """, unsafe_allow_html=True)
 
-with h_cols[3]:
+with h4:
     team_roster_count = len(st.session_state.my_roster)
     ir_count = len(st.session_state.my_ir)
     st.markdown(f"""
@@ -784,7 +778,7 @@ with c_board:
             return " ▲" if st.session_state.sort_asc else " ▼"
         return ""
 
-    # DESKTOP HEADER BAR (Hidden on mobile via CSS)
+    # DESKTOP HEADER BAR (Hidden on mobile viewports via CSS)
     st.markdown("<div class='desktop-hdr'>", unsafe_allow_html=True)
     h_act, h_name, h_pos, h_team, h_proj, h_vorp, h_adp, h_surv, h_verd = st.columns(
         [1.2, 3.5, 1.0, 1.0, 1.4, 1.4, 1.2, 1.8, 1.4]
@@ -972,7 +966,7 @@ with c_roster:
         with cliff_cols[i]:
             st.metric(label=f"{p} Cliff", value=f"-{cliff_val:.1f}")
 
-# 13. TIER 2: FULL-WIDTH 100% ACROSS DRAFT BOARD & POSITIONAL TABS
+# 13. TIER 2: FULL-WIDTH DRAFT BOARD & POSITIONAL TABS
 st.markdown("---")
 st.markdown("#### 📋 Full League Draft Board & Positional Depth")
 
