@@ -94,15 +94,20 @@ st.markdown("""
         background-color: var(--war-row-hover);
     }
 
-    .prio-header-bar {
-        display: flex;
-        color: var(--war-text-sub);
-        font-size: 0.74rem;
-        font-weight: 800;
-        text-transform: uppercase;
-        padding: 6px 12px;
-        border-bottom: 2px solid var(--war-border);
-        margin-bottom: 6px;
+    /* Interactive Sortable Header Buttons */
+    .stButton.sort-hdr > button {
+        background: transparent !important;
+        border: none !important;
+        color: var(--war-text-sub) !important;
+        font-size: 0.72rem !important;
+        font-weight: 800 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.03em !important;
+        padding: 4px 2px !important;
+        box-shadow: none !important;
+    }
+    .stButton.sort-hdr > button:hover {
+        color: #2563eb !important;
     }
 
     .stTabs [data-baseweb="tab-list"] {
@@ -145,11 +150,26 @@ if 'practice_mode' not in st.session_state:
 if 'auto_advance' not in st.session_state:
     st.session_state.auto_advance = True
 
+# SORT STATE INITIALIZATION
+if 'sort_col' not in st.session_state:
+    st.session_state.sort_col = 'VORP'
+if 'sort_asc' not in st.session_state:
+    st.session_state.sort_asc = False
+
+def set_sort(col, default_asc=False):
+    if st.session_state.sort_col == col:
+        st.session_state.sort_asc = not st.session_state.sort_asc
+    else:
+        st.session_state.sort_col = col
+        st.session_state.sort_asc = default_asc
+
 def reset_entire_board():
     st.session_state.draft_history = []
     st.session_state.my_roster = []
     st.session_state.my_ir = []
     st.session_state.current_pick = 1
+    st.session_state.sort_col = 'VORP'
+    st.session_state.sort_asc = False
     st.rerun()
 
 # 3. ACTIVE NFL FRANCHISES LIST
@@ -707,23 +727,68 @@ with c_board:
     else:
         target_pool = display_scored[display_scored['Pos'] == prio_pos_filter]
 
-    priority_display = target_pool.sort_values(
-        by=['VORP', 'ADP'], ascending=[False, True]
-    ).head(prio_limit).reset_index(drop=True)
+    # DYNAMIC MULTI-COLUMN SORTING LOGIC
+    sort_col = st.session_state.sort_col
+    sort_asc = st.session_state.sort_asc
 
-    st.markdown("""
-    <div class="prio-header-bar">
-        <div style="flex: 1.2;">Action</div>
-        <div style="flex: 3.5;">Player</div>
-        <div style="flex: 1.0;">Pos</div>
-        <div style="flex: 1.0;">Team</div>
-        <div style="flex: 1.4; text-align: right;">Proj Pts</div>
-        <div style="flex: 1.4; text-align: right;">VORP</div>
-        <div style="flex: 1.2; text-align: right;">ADP</div>
-        <div style="flex: 1.8; text-align: right;">Survival</div>
-        <div style="flex: 1.4; text-align: right;">Verdict</div>
-    </div>
-    """, unsafe_allow_html=True)
+    if sort_col == 'VORP':
+        priority_display = target_pool.sort_values(
+            by=['VORP', 'ADP'], ascending=[sort_asc, True]
+        ).head(prio_limit).reset_index(drop=True)
+    elif sort_col == 'ADP':
+        priority_display = target_pool.sort_values(
+            by=['ADP', 'VORP'], ascending=[sort_asc, False]
+        ).head(prio_limit).reset_index(drop=True)
+    else:
+        priority_display = target_pool.sort_values(
+            by=[sort_col, 'VORP'], ascending=[sort_asc, False]
+        ).head(prio_limit).reset_index(drop=True)
+
+    # Helper icon generator for header indicators
+    def sort_indicator(col_name):
+        if st.session_state.sort_col == col_name:
+            return " ▲" if st.session_state.sort_asc else " ▼"
+        return ""
+
+    # CLICKABLE SORTABLE HEADER ROW
+    h_act, h_name, h_pos, h_team, h_proj, h_vorp, h_adp, h_surv, h_verd = st.columns(
+        [1.2, 3.5, 1.0, 1.0, 1.4, 1.4, 1.2, 1.8, 1.4]
+    )
+
+    with h_act:
+        st.markdown("<div style='font-size:0.72rem; font-weight:800; color:var(--war-text-sub); padding:4px 0;'>ACTION</div>", unsafe_allow_html=True)
+    with h_name:
+        if st.button(f"PLAYER{sort_indicator('Name')}", key="hdr_sort_name", use_container_width=True):
+            set_sort('Name', default_asc=True)
+            st.rerun()
+    with h_pos:
+        if st.button(f"POS{sort_indicator('Pos')}", key="hdr_sort_pos", use_container_width=True):
+            set_sort('Pos', default_asc=True)
+            st.rerun()
+    with h_team:
+        if st.button(f"NFL{sort_indicator('Team')}", key="hdr_sort_team", use_container_width=True):
+            set_sort('Team', default_asc=True)
+            st.rerun()
+    with h_proj:
+        if st.button(f"PROJ{sort_indicator('ProjPts')}", key="hdr_sort_proj", use_container_width=True):
+            set_sort('ProjPts', default_asc=False)
+            st.rerun()
+    with h_vorp:
+        if st.button(f"VORP{sort_indicator('VORP')}", key="hdr_sort_vorp", use_container_width=True):
+            set_sort('VORP', default_asc=False)
+            st.rerun()
+    with h_adp:
+        if st.button(f"ADP{sort_indicator('ADP')}", key="hdr_sort_adp", use_container_width=True):
+            set_sort('ADP', default_asc=True)
+            st.rerun()
+    with h_surv:
+        if st.button(f"SURVIVAL{sort_indicator('Survival %')}", key="hdr_sort_surv", use_container_width=True):
+            set_sort('Survival %', default_asc=False)
+            st.rerun()
+    with h_verd:
+        st.markdown("<div style='font-size:0.72rem; font-weight:800; color:var(--war-text-sub); text-align:right; padding:4px 0;'>VERDICT</div>", unsafe_allow_html=True)
+
+    st.markdown("<div style='border-bottom: 2px solid var(--war-border); margin-bottom: 6px;'></div>", unsafe_allow_html=True)
 
     if priority_display.empty:
         st.info("No available players matching this positional filter.")
