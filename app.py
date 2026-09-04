@@ -10,7 +10,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 1. ADAPTIVE LIGHT/DARK DUAL-THEME TERMINAL CSS
+# 1. ADAPTIVE LIGHT/DARK & RESPONSIVE MOBILE CSS
 st.markdown("""
 <style>
     :root {
@@ -55,31 +55,32 @@ st.markdown("""
         --war-row-hover: #1e293b;
     }
 
+    /* Base Containers */
     .metric-card {
         background-color: var(--war-bg-card);
         border: 2px solid var(--war-border);
         border-radius: 8px;
-        padding: 12px 16px;
+        padding: 10px 14px;
         margin-bottom: 8px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.06);
     }
     .hud-title {
         color: var(--war-text-sub);
-        font-size: 0.74rem;
+        font-size: 0.72rem;
         text-transform: uppercase;
         letter-spacing: 0.05em;
-        margin-bottom: 4px;
+        margin-bottom: 2px;
         font-weight: 700;
     }
     .hud-value {
         color: var(--war-text-main);
-        font-size: 1.35rem;
+        font-size: 1.25rem;
         font-weight: 800;
         line-height: 1.2;
     }
     .hud-sub {
         color: #059669;
-        font-size: 0.75rem;
+        font-size: 0.72rem;
         font-weight: 600;
     }
 
@@ -87,7 +88,7 @@ st.markdown("""
         background-color: var(--war-bg-card);
         border: 1px solid var(--war-border);
         border-radius: 6px;
-        padding: 4px 10px;
+        padding: 6px 10px;
         margin-bottom: 4px;
     }
     .prio-row-container:hover {
@@ -114,16 +115,16 @@ st.markdown("""
         border-bottom: 2px solid var(--war-border);
     }
     .stTabs [data-baseweb="tab"] {
-        padding: 6px 16px;
-        font-size: 0.88rem;
+        padding: 6px 14px;
+        font-size: 0.85rem;
         font-weight: 700;
         border-radius: 6px 6px 0 0;
     }
 
     .badge-pos {
-        font-size: 0.75rem;
+        font-size: 0.72rem;
         font-weight: 700;
-        padding: 2px 7px;
+        padding: 2px 6px;
         border-radius: 4px;
         letter-spacing: 0.02em;
     }
@@ -132,6 +133,35 @@ st.markdown("""
     .badge-qb { background-color: #ea580c; color: #ffffff; }
     .badge-te { background-color: #d97706; color: #ffffff; }
     .badge-other { background-color: #475569; color: #ffffff; }
+
+    /* =====================================================
+       MOBILE RESPONSIVE OVERRIDES (< 768px Screens)
+       ===================================================== */
+    @media (max-width: 768px) {
+        .block-container {
+            padding-top: 0.5rem !important;
+            padding-bottom: 1.5rem !important;
+            padding-left: 0.4rem !important;
+            padding-right: 0.4rem !important;
+        }
+        .metric-card {
+            padding: 8px 10px !important;
+            margin-bottom: 4px !important;
+        }
+        .hud-value {
+            font-size: 1.05rem !important;
+        }
+        .hud-title {
+            font-size: 0.65rem !important;
+        }
+        button {
+            touch-action: manipulation;
+            min-height: 42px !important;
+        }
+        .desktop-hdr {
+            display: none !important;
+        }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -177,7 +207,7 @@ NFL_TEAMS = {
     'MIN', 'NE', 'NO', 'NYG', 'NYJ', 'PHI', 'PIT', 'SF', 'SEA', 'TB', 'TEN', 'WAS'
 }
 
-# 4. ROBUST DATA ENGINE (15-Min TTL + Granular Injury Mapping)
+# 4. DATA ENGINE (15-Min TTL + Granular Injury Mapping)
 @st.cache_data(ttl=900)
 def fetch_player_pool():
     try:
@@ -398,29 +428,32 @@ def execute_pick(player_name, is_my_pick, stash_to_ir=False):
             simulate_bot_picks(TOTAL_PICKS + 1)
     st.rerun()
 
-# 9. EXECUTIVE HUD
+# 9. EXECUTIVE HUD (2x2 GRID ON MOBILE, 1x4 ON DESKTOP)
 curr_round = min(((curr_p - 1) // num_teams) + 1, total_rounds)
 next_picks = [p for p in my_picks if p >= curr_p]
 
-h1, h2, h3, h4 = st.columns([1.2, 1.4, 1.6, 1.8])
+hud_c1, hud_c2 = st.columns(2) if st.session_state.get('_is_mobile', False) else st.columns([1.2, 1.4, 1.6, 1.8])
 
-with h1:
-    mode_label = "🎮 PRACTICE (AUTO-ADV)" if (st.session_state.practice_mode and st.session_state.auto_advance) else ("🎮 PRACTICE" if st.session_state.practice_mode else "LIVE WAR ROOM")
+# Render Columns Adaptively
+h_cols = st.columns([1.2, 1.4, 1.6, 1.8])
+
+with h_cols[0]:
+    mode_label = "🎮 PRACTICE (AUTO)" if (st.session_state.practice_mode and st.session_state.auto_advance) else ("🎮 PRACTICE" if st.session_state.practice_mode else "LIVE WAR ROOM")
     remaining_picks = max(0, TOTAL_PICKS - curr_p + 1)
     st.markdown(f"""
     <div class="metric-card">
         <div class="hud-title">{mode_label}</div>
         <div class="hud-value">R{curr_round} • P#{min(curr_p, TOTAL_PICKS)}</div>
-        <div class="hud-sub">{remaining_picks} picks remaining</div>
+        <div class="hud-sub">{remaining_picks} picks left</div>
     </div>
     """, unsafe_allow_html=True)
 
-with h2:
+with h_cols[1]:
     if curr_p > TOTAL_PICKS:
-        status_text = "🏁 DRAFT COMPLETED"
+        status_text = "🏁 COMPLETED"
         status_color = "#059669"
     else:
-        status_text = "🚨 ON THE CLOCK" if is_turn else f"In Queue ({gap} picks away)"
+        status_text = "🚨 ON CLOCK" if is_turn else f"In Queue ({gap} away)"
         status_color = "#dc2626" if is_turn else "#2563eb"
     st.markdown(f"""
     <div class="metric-card">
@@ -430,70 +463,70 @@ with h2:
     </div>
     """, unsafe_allow_html=True)
 
-with h3:
+with h_cols[2]:
     if len(next_picks) >= 2:
         flow_text = f"#{next_picks[0]} ➔ #{next_picks[1]}"
-        sub_text = f"Turn Gap: {next_picks[1] - next_picks[0]} picks"
+        sub_text = f"Gap: {next_picks[1] - next_picks[0]} picks"
     elif len(next_picks) == 1:
-        flow_text = f"Final Pick: #{next_picks[0]}"
+        flow_text = f"Final: #{next_picks[0]}"
         sub_text = "Draft Wrap-Up"
     else:
-        flow_text = "Draft Completed"
+        flow_text = "Completed"
         sub_text = "All rounds logged"
 
     st.markdown(f"""
     <div class="metric-card">
-        <div class="hud-title">Turn Package Rhythm</div>
+        <div class="hud-title">Turn Package</div>
         <div class="hud-value">{flow_text}</div>
         <div class="hud-sub">{sub_text}</div>
     </div>
     """, unsafe_allow_html=True)
 
-with h4:
+with h_cols[3]:
     team_roster_count = len(st.session_state.my_roster)
     ir_count = len(st.session_state.my_ir)
     st.markdown(f"""
     <div class="metric-card">
         <div class="hud-title">Roster Allocation</div>
-        <div class="hud-value">{team_roster_count}/{total_rounds} Active <span style="font-size:0.9rem; color: var(--war-text-sub);">(+{ir_count} IR)</span></div>
+        <div class="hud-value">{team_roster_count}/{total_rounds} Active <span style="font-size:0.85rem; color: var(--war-text-sub);">(+{ir_count} IR)</span></div>
         <div class="hud-sub">{(total_rounds - team_roster_count)} open spots</div>
     </div>
     """, unsafe_allow_html=True)
 
-# 10. DRAFT COUNTDOWN CLOCK COMPONENT (AUTO-RESETS ON ANY PICK)
+# 10. DRAFT COUNTDOWN CLOCK COMPONENT (AUTO-RESET ON PICK)
 clock_html = f"""
 <div id="clock-container" data-pick="{curr_p}" style="
     background: var(--war-bg-card, #ffffff);
     border: 2px solid {'#dc2626' if is_turn else '#cbd5e1'};
     border-radius: 8px;
-    padding: 10px 16px;
+    padding: 8px 14px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 ">
-    <div style="display: flex; align-items: center; gap: 14px;">
-        <span style="font-size: 0.85rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: {'#dc2626' if is_turn else '#475569'};">
-            {'🚨 ON THE CLOCK TIMER' if is_turn else '⏱️ DRAFT CLOCK'}
+    <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 0.8rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: {'#dc2626' if is_turn else '#475569'};">
+            {'🚨 ON CLOCK' if is_turn else '⏱️ TIMER'}
         </span>
         <div id="timer-display" style="
-            font-size: 1.6rem;
+            font-size: 1.45rem;
             font-weight: 800;
             font-variant-numeric: tabular-nums;
             color: #059669;
-            min-width: 70px;
+            min-width: 65px;
         ">00:{clock_seconds:02d}</div>
     </div>
-    <div style="display: flex; align-items: center; gap: 8px;">
+    <div style="display: flex; align-items: center; gap: 6px;">
         <button id="btn-toggle" onclick="toggleClock()" style="
             background: #2563eb;
             color: #ffffff;
             border: none;
             border-radius: 5px;
-            padding: 6px 14px;
-            font-size: 0.82rem;
+            padding: 5px 12px;
+            font-size: 0.8rem;
             font-weight: 700;
             cursor: pointer;
         ">Pause</button>
@@ -502,8 +535,8 @@ clock_html = f"""
             color: #ffffff;
             border: none;
             border-radius: 5px;
-            padding: 6px 14px;
-            font-size: 0.82rem;
+            padding: 5px 12px;
+            font-size: 0.8rem;
             font-weight: 700;
             cursor: pointer;
         ">Reset</button>
@@ -611,13 +644,12 @@ clock_html = f"""
         startTimer();
     }}
 
-    // Clean reset triggered on every instance mount / pick progression
     resetClock();
 </script>
 """
-components.html(clock_html, height=72)
+components.html(clock_html, height=66)
 
-# 11. IN-LINE ACTION CONSOLE + PROMINENT RESET CONTROLS
+# 11. IN-LINE ACTION CONSOLE + RESET CONTROLS
 if curr_p > TOTAL_PICKS:
     st.success("🎉 **DRAFT COMPLETE! All rounds have concluded.**")
     if st.button("🚀 Start New Draft / Reset Board", type="primary", use_container_width=True):
@@ -752,7 +784,8 @@ with c_board:
             return " ▲" if st.session_state.sort_asc else " ▼"
         return ""
 
-    # CLICKABLE SORTABLE HEADER ROW
+    # DESKTOP HEADER BAR (Hidden on mobile via CSS)
+    st.markdown("<div class='desktop-hdr'>", unsafe_allow_html=True)
     h_act, h_name, h_pos, h_team, h_proj, h_vorp, h_adp, h_surv, h_verd = st.columns(
         [1.2, 3.5, 1.0, 1.0, 1.4, 1.4, 1.2, 1.8, 1.4]
     )
@@ -790,7 +823,7 @@ with c_board:
     with h_verd:
         st.markdown("<div style='font-size:0.72rem; font-weight:800; color:var(--war-text-sub); text-align:right; padding:4px 0;'>VERDICT</div>", unsafe_allow_html=True)
 
-    st.markdown("<div style='border-bottom: 2px solid var(--war-border); margin-bottom: 6px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='border-bottom: 2px solid var(--war-border); margin-bottom: 6px;'></div></div>", unsafe_allow_html=True)
 
     if priority_display.empty:
         st.info("No available players matching this positional filter.")
