@@ -13,7 +13,6 @@ st.set_page_config(
 # 1. ADAPTIVE LIGHT/DARK DUAL-THEME TERMINAL CSS
 st.markdown("""
 <style>
-    /* CSS Variables for Dynamic Theme Adaptation */
     :root {
         --war-bg-card: #ffffff;
         --war-border: #cbd5e1;
@@ -36,7 +35,6 @@ st.markdown("""
         }
     }
 
-    /* Streamlit light-theme container hook */
     [data-theme="light"] {
         --war-bg-card: #ffffff;
         --war-border: #cbd5e1;
@@ -57,7 +55,6 @@ st.markdown("""
         --war-row-hover: #1e293b;
     }
 
-    /* Executive HUD & Container Cards */
     .metric-card {
         background-color: var(--war-bg-card);
         border: 2px solid var(--war-border);
@@ -86,12 +83,11 @@ st.markdown("""
         font-weight: 600;
     }
 
-    /* Custom Priority Target Row Container */
     .prio-row-container {
         background-color: var(--war-bg-card);
         border: 1px solid var(--war-border);
         border-radius: 6px;
-        padding: 5px 10px;
+        padding: 4px 10px;
         margin-bottom: 4px;
     }
     .prio-row-container:hover {
@@ -109,19 +105,17 @@ st.markdown("""
         margin-bottom: 6px;
     }
 
-    /* Tabs styling */
     .stTabs [data-baseweb="tab-list"] {
         gap: 4px;
         border-bottom: 2px solid var(--war-border);
     }
     .stTabs [data-baseweb="tab"] {
-        padding: 6px 14px;
-        font-size: 0.85rem;
-        font-weight: 600;
+        padding: 6px 16px;
+        font-size: 0.88rem;
+        font-weight: 700;
         border-radius: 6px 6px 0 0;
     }
 
-    /* Badges */
     .badge-pos {
         font-size: 0.75rem;
         font-weight: 700;
@@ -258,7 +252,6 @@ with st.sidebar.expander("📂 Data Feeds & Backup", expanded=False):
 
 TOTAL_PICKS = num_teams * total_rounds
 
-# Generate dynamic snake pick schedule
 def generate_my_picks(slot, teams, rounds):
     picks = []
     for r in range(rounds):
@@ -656,7 +649,7 @@ else:
 
 st.markdown("---")
 
-# 12. TERMINAL SPLIT: WORKSPACE & ROSTER
+# 12. TIER 1: SPLIT WORKSPACE (PRIORITY TARGETS LEFT • ROSTER RIGHT)
 c_board, c_roster = st.columns([3.1, 1.9])
 
 TABLE_CONFIG = {
@@ -718,7 +711,6 @@ with c_board:
         by=['VORP', 'ADP'], ascending=[False, True]
     ).head(prio_limit).reset_index(drop=True)
 
-    # High-Contrast Header Bar
     st.markdown("""
     <div class="prio-header-bar">
         <div style="flex: 1.2;">Action</div>
@@ -775,74 +767,6 @@ with c_board:
                 st.markdown(f"<div style='font-size: 0.8rem; font-weight: 700; color: {act_color}; text-align: right; padding-top: 4px;'>{row['Action']}</div>", unsafe_allow_html=True)
 
             st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("---")
-
-    tab_board, tab_all, tab_rb, tab_wr, tab_te, tab_qb, tab_dst_k, tab_injury = st.tabs(
-        ["📋 Visual Grid", "🔥 All VORP", "🏃 RB", "🙌 WR", "🧱 TE", "🎯 QB", "🛡️ D/ST & K", "🏥 IR Hub"]
-    )
-
-    def render_pos_table(df_sub):
-        st.dataframe(
-            df_sub[['Name', 'Pos', 'Team', 'ProjPts', 'VORP', 'ADP', 'Survival %', 'Action', 'Status Badge', 'Notes']]
-            .sort_values(by=['VORP', 'ADP'], ascending=[False, True]),
-            use_container_width=True,
-            hide_index=True,
-            column_config=TABLE_CONFIG
-        )
-
-    with tab_board:
-        grid_data = {f"Team {i+1}": ["—"] * total_rounds for i in range(num_teams)}
-        for item in st.session_state.draft_history:
-            p_num = item['pick']
-            r_idx = (p_num - 1) // num_teams
-            p_in_round = (p_num - 1) % num_teams
-            col_idx = p_in_round if (r_idx % 2 == 0) else (num_teams - 1 - p_in_round)
-            col_name = f"Team {col_idx + 1}"
-            grid_data[col_name][r_idx] = f"{item['name']} ({item['pos']})"
-
-        board_df = pd.DataFrame(grid_data, index=[f"R{r+1}" for r in range(total_rounds)])
-
-        def style_draft_grid(val):
-            if "—" in val:
-                return "color: #94a3b8; background-color: var(--war-subtle-bg);"
-            if "(RB)" in val:
-                return "background-color: #2563eb; color: #ffffff; font-weight: 700;"
-            if "(WR)" in val:
-                return "background-color: #059669; color: #ffffff; font-weight: 700;"
-            if "(QB)" in val:
-                return "background-color: #ea580c; color: #ffffff; font-weight: 700;"
-            if "(TE)" in val:
-                return "background-color: #d97706; color: #ffffff; font-weight: 700;"
-            return "background-color: #475569; color: #ffffff; font-weight: 700;"
-
-        try:
-            styled_board = board_df.style.map(style_draft_grid)
-        except AttributeError:
-            styled_board = board_df.style.applymap(style_draft_grid)
-
-        st.dataframe(styled_board, use_container_width=True, height=460)
-
-    with tab_all:
-        render_pos_table(display_scored[~display_scored['Pos'].isin(['K', 'DST'])])
-    with tab_rb:
-        render_pos_table(display_scored[display_scored['Pos'] == 'RB'])
-    with tab_wr:
-        render_pos_table(display_scored[display_scored['Pos'] == 'WR'])
-    with tab_te:
-        render_pos_table(display_scored[display_scored['Pos'] == 'TE'])
-    with tab_qb:
-        render_pos_table(display_scored[display_scored['Pos'] == 'QB'])
-    with tab_dst_k:
-        render_pos_table(display_scored[display_scored['Pos'].isin(['DST', 'K'])])
-    with tab_injury:
-        injured_only = display_scored[display_scored['Status'] != 'Healthy']
-        st.dataframe(
-            injured_only[['Name', 'Pos', 'Team', 'ADP', 'Status', 'Notes']].sort_values(by='ADP'),
-            use_container_width=True,
-            hide_index=True,
-            column_config=TABLE_CONFIG
-        )
 
 with c_roster:
     st.markdown("##### 🛡️ Lineup Depth Chart")
@@ -947,3 +871,73 @@ with c_roster:
         cliff_val = (top_tier.iloc[0]['VORP'] - top_tier.iloc[-1]['VORP']) if len(top_tier) >= 2 else 0.0
         with cliff_cols[i]:
             st.metric(label=f"{p} Cliff", value=f"-{cliff_val:.1f}")
+
+# 13. TIER 2: FULL-WIDTH 100% ACROSS DRAFT BOARD & POSITIONAL TABS
+st.markdown("---")
+st.markdown("#### 📋 Full League Draft Board & Positional Depth")
+
+tab_board, tab_all, tab_rb, tab_wr, tab_te, tab_qb, tab_dst_k, tab_injury = st.tabs(
+    ["📋 Full Visual Board", "🔥 All VORP", "🏃 Running Backs", "🙌 Wide Receivers", "🧱 Tight Ends", "🎯 Quarterbacks", "🛡️ D/ST & K", "🏥 IR Hub"]
+)
+
+def render_pos_table(df_sub):
+    st.dataframe(
+        df_sub[['Name', 'Pos', 'Team', 'ProjPts', 'VORP', 'ADP', 'Survival %', 'Action', 'Status Badge', 'Notes']]
+        .sort_values(by=['VORP', 'ADP'], ascending=[False, True]),
+        use_container_width=True,
+        hide_index=True,
+        column_config=TABLE_CONFIG
+    )
+
+with tab_board:
+    grid_data = {f"Team {i+1}": ["—"] * total_rounds for i in range(num_teams)}
+    for item in st.session_state.draft_history:
+        p_num = item['pick']
+        r_idx = (p_num - 1) // num_teams
+        p_in_round = (p_num - 1) % num_teams
+        col_idx = p_in_round if (r_idx % 2 == 0) else (num_teams - 1 - p_in_round)
+        col_name = f"Team {col_idx + 1}"
+        grid_data[col_name][r_idx] = f"{item['name']} ({item['pos']})"
+
+    board_df = pd.DataFrame(grid_data, index=[f"Round {r+1}" for r in range(total_rounds)])
+
+    def style_draft_grid(val):
+        if "—" in val:
+            return "color: #94a3b8; background-color: var(--war-subtle-bg);"
+        if "(RB)" in val:
+            return "background-color: #2563eb; color: #ffffff; font-weight: 700;"
+        if "(WR)" in val:
+            return "background-color: #059669; color: #ffffff; font-weight: 700;"
+        if "(QB)" in val:
+            return "background-color: #ea580c; color: #ffffff; font-weight: 700;"
+        if "(TE)" in val:
+            return "background-color: #d97706; color: #ffffff; font-weight: 700;"
+        return "background-color: #475569; color: #ffffff; font-weight: 700;"
+
+    try:
+        styled_board = board_df.style.map(style_draft_grid)
+    except AttributeError:
+        styled_board = board_df.style.applymap(style_draft_grid)
+
+    st.dataframe(styled_board, use_container_width=True, height=520)
+
+with tab_all:
+    render_pos_table(display_scored[~display_scored['Pos'].isin(['K', 'DST'])])
+with tab_rb:
+    render_pos_table(display_scored[display_scored['Pos'] == 'RB'])
+with tab_wr:
+    render_pos_table(display_scored[display_scored['Pos'] == 'WR'])
+with tab_te:
+    render_pos_table(display_scored[display_scored['Pos'] == 'TE'])
+with tab_qb:
+    render_pos_table(display_scored[display_scored['Pos'] == 'QB'])
+with tab_dst_k:
+    render_pos_table(display_scored[display_scored['Pos'].isin(['DST', 'K'])])
+with tab_injury:
+    injured_only = display_scored[display_scored['Status'] != 'Healthy']
+    st.dataframe(
+        injured_only[['Name', 'Pos', 'Team', 'ADP', 'Status', 'Notes']].sort_values(by='ADP'),
+        use_container_width=True,
+        hide_index=True,
+        column_config=TABLE_CONFIG
+    )
