@@ -65,6 +65,8 @@ if 'current_pick' not in st.session_state:
     st.session_state.current_pick = 1
 if 'practice_mode' not in st.session_state:
     st.session_state.practice_mode = False
+if 'auto_advance' not in st.session_state:
+    st.session_state.auto_advance = True
 
 # 3. SIDEBAR CONFIGURATION (ACCORDIONS)
 with st.sidebar.expander("⚙️ League Settings", expanded=False):
@@ -76,13 +78,15 @@ with st.sidebar.expander("⚙️ League Settings", expanded=False):
 with st.sidebar.expander("🎮 Practice Draft Simulation", expanded=True):
     practice_toggle = st.toggle("Enable Practice Mode", value=st.session_state.practice_mode)
     st.session_state.practice_mode = practice_toggle
+    auto_adv_toggle = st.toggle("Auto-Fast-Forward to My Pick", value=st.session_state.auto_advance,
+                                help="When enabled, opponents auto-pick immediately after you confirm your turn.")
+    st.session_state.auto_advance = auto_adv_toggle
     ai_randomness = st.select_slider(
         "AI Draft Tendencies:",
         options=["Strict ADP", "Realistic Variance", "Chaotic Reach"],
         value="Realistic Variance",
         help="Controls how strictly simulated opponents draft according to consensus ADP."
     )
-    st.caption("In Practice Mode, you only pick when you are on the clock. Bot opponents auto-draft instantly when you click 'Simulate to My Turn'.")
 
 with st.sidebar.expander("📂 Data Feeds & Backup", expanded=False):
     uploaded = st.file_uploader("Upload Projections CSV", type=["csv"])
@@ -158,9 +162,42 @@ def fetch_player_pool():
         return pd.DataFrame(data)
 
 raw_df = pd.read_csv(uploaded) if uploaded else fetch_player_pool()
+
+# 5. AI BOT SIMULATION FUNCTION
+def simulate_bot_picks(target_pick):
+    scale_dict = {"Strict ADP": 0.8, "Realistic Variance": 3.0, "Chaotic Reach": 6.5}
+    curr_scale = scale_dict.get(ai_randomness, 3.0)
+    
+    while st.session_state.current_pick < target_pick and st.session_state.current_pick <= TOTAL_PICKS:
+        p_idx = st.session_state.current_pick
+        d_names = [d['name'] for d in st.session_state.draft_history]
+        pool = raw_df[~raw_df['Name'].isin(d_names)].copy()
+        
+        if pool.empty:
+            break
+            
+        pool['sim_val'] = pool['ADP'] + np.random.normal(0, curr_scale, size=len(pool))
+        bot_choice = pool.sort_values(by='sim_val').iloc[0]
+        
+        st.session_state.draft_history.append({
+            'pick': p_idx,
+            'name': bot_choice['Name'],
+            'pos': bot_choice['Pos'],
+            'team': bot_choice['Team'],
+            'is_mine': False,
+            'is_ir': False
+        })
+        st.session_state.current_pick += 1
+
+# Auto-advance bots at the start of draft if needed
+if st.session_state.practice_mode and st.session_state.auto_advance and st.session_state.current_pick not in my_picks and st.session_state.current_pick <= TOTAL_PICKS:
+    next_user_pick = [p for p in my_picks if p >= st.session_state.current_pick]
+    target = next_user_pick[0] if next_user_pick else TOTAL_PICKS + 1
+    simulate_bot_picks(target)
+
 drafted_names = [d['name'] for d in st.session_state.draft_history]
 
-# 5. DYNAMIC VORP ENGINE
+# 6. DYNAMIC VORP ENGINE
 def calculate_dynamic_vorp(df, my_roster_names):
     df_calc = df.copy()
     my_players = df_calc[df_calc['Name'].isin(my_roster_names)]
@@ -183,7 +220,7 @@ def calculate_dynamic_vorp(df, my_roster_names):
 available_df = raw_df[~raw_df['Name'].isin(drafted_names)].copy()
 scored_df = calculate_dynamic_vorp(available_df, st.session_state.my_roster)
 
-# 6. TURN CADENCE & SIMULATION
+# 7. TURN CADENCE & SIMULATION
 curr_p = st.session_state.current_pick
 is_turn = curr_p in my_picks
 
@@ -210,33 +247,6 @@ def strategy_tag(row):
 
 scored_df['Action'] = scored_df.apply(strategy_tag, axis=1)
 
-# 7. AI PRACTICE AUTO-DRAFT ENGINE
-def simulate_bot_picks(target_pick):
-    scale_dict = {"Strict ADP": 0.8, "Realistic Variance": 3.0, "Chaotic Reach": 6.5}
-    curr_scale = scale_dict.get(ai_randomness, 3.0)
-    
-    while st.session_state.current_pick < target_pick and st.session_state.current_pick <= TOTAL_PICKS:
-        p_idx = st.session_state.current_pick
-        d_names = [d['name'] for d in st.session_state.draft_history]
-        pool = raw_df[~raw_df['Name'].isin(d_names)].copy()
-        
-        if pool.empty:
-            break
-            
-        # Add random noise to ADP to simulate human/bot selection variance
-        pool['sim_val'] = pool['ADP'] + np.random.normal(0, curr_scale, size=len(pool))
-        bot_choice = pool.sort_values(by='sim_val').iloc[0]
-        
-        st.session_state.draft_history.append({
-            'pick': p_idx,
-            'name': bot_choice['Name'],
-            'pos': bot_choice['Pos'],
-            'team': bot_choice['Team'],
-            'is_mine': False,
-            'is_ir': False
-        })
-        st.session_state.current_pick += 1
-
 # 8. EXECUTIVE HUD
 curr_round = ((curr_p - 1) // num_teams) + 1
 next_picks = [p for p in my_picks if p >= curr_p]
@@ -244,7 +254,7 @@ next_picks = [p for p in my_picks if p >= curr_p]
 h1, h2, h3, h4 = st.columns([1.2, 1.4, 1.6, 1.8])
 
 with h1:
-    mode_label = "🎮 PRACTICE MODE" if st.session_state.practice_mode else "LIVE WAR ROOM"
+    mode_label = "🎮 PRACTICE (AUTO-ADV)" if (st.session_state.practice_mode and st.session_state.auto_advance) else ("🎮 PRACTICE" if st.session_state.practice_mode else "LIVE WAR ROOM")
     st.markdown(f"""
     <div class="metric-card">
         <div class="hud-title">{mode_label}</div>
@@ -294,59 +304,70 @@ with h4:
     </div>
     """, unsafe_allow_html=True)
 
-# 9. IN-LINE ACTION CONSOLE & PRACTICE AUTO-DRAFT BAR
+# 9. IN-LINE ACTION CONSOLE
 with st.container():
-    if st.session_state.practice_mode and not is_turn and curr_p <= TOTAL_PICKS:
-        # Automated practice runner bar
-        sim_c1, sim_c2 = st.columns([3.5, 1.5])
-        with sim_c1:
-            next_target = [p for p in my_picks if p > curr_p]
-            target_p = next_target[0] if next_target else TOTAL_PICKS + 1
-            st.info(f"Bot opponents are drafting picks #{curr_p} through #{target_p - 1}...")
-        with sim_c2:
-            if st.button(f"⏩ Simulate to Pick #{target_p} (My Turn)", type="primary", use_container_width=True):
-                simulate_bot_picks(target_p)
+    act_col1, act_col2, act_col3, act_col4, act_col5 = st.columns([2.8, 1.1, 1.0, 1.3, 0.9])
+    with act_col1:
+        selected_player = st.selectbox(
+            "Quick Log Draft Pick:",
+            options=scored_df['Name'].tolist() if not scored_df.empty else ["Pool Empty"],
+            label_visibility="collapsed",
+            help="Search and log any drafted player."
+        )
+    with act_col2:
+        mine = st.checkbox("Draft to My Team", value=is_turn)
+    with act_col3:
+        send_to_ir = st.checkbox("Send to IR", value=False)
+    with act_col4:
+        if st.button("Confirm Pick ↵", type="primary", use_container_width=True):
+            if not scored_df.empty:
+                match = raw_df[raw_df['Name'] == selected_player]
+                p_pos = match.iloc[0]['Pos'] if not match.empty else "FLEX"
+                p_team = match.iloc[0]['Team'] if not match.empty else ""
+
+                st.session_state.draft_history.append({
+                    'pick': curr_p,
+                    'name': selected_player,
+                    'pos': p_pos,
+                    'team': p_team,
+                    'is_mine': mine,
+                    'is_ir': (mine and send_to_ir and len(st.session_state.my_ir) == 0)
+                })
+
+                if mine:
+                    if send_to_ir and len(st.session_state.my_ir) == 0:
+                        st.session_state.my_ir.append(selected_player)
+                    else:
+                        st.session_state.my_roster.append(selected_player)
+                
+                st.session_state.current_pick += 1
+                
+                # AUTO-ADVANCE TRIGGER: Fast-forward bots automatically to your next turn
+                if st.session_state.practice_mode and st.session_state.auto_advance:
+                    next_user_pick = [p for p in my_picks if p >= st.session_state.current_pick]
+                    if next_user_pick:
+                        simulate_bot_picks(next_user_pick[0])
+                    else:
+                        simulate_bot_picks(TOTAL_PICKS + 1)
+                        
                 st.rerun()
-    else:
-        # Standard Pick Entry
-        act_col1, act_col2, act_col3, act_col4, act_col5 = st.columns([2.8, 1.1, 1.0, 1.3, 0.9])
-        with act_col1:
-            selected_player = st.selectbox(
-                "Quick Log Draft Pick:",
-                options=scored_df['Name'].tolist() if not scored_df.empty else ["Pool Empty"],
-                label_visibility="collapsed",
-                help="Search and log any drafted player."
-            )
-        with act_col2:
-            mine = st.checkbox("Draft to My Team", value=is_turn)
-        with act_col3:
-            send_to_ir = st.checkbox("Send to IR", value=False)
-        with act_col4:
-            if st.button("Confirm Pick ↵", type="primary", use_container_width=True):
-                if not scored_df.empty:
-                    match = raw_df[raw_df['Name'] == selected_player]
-                    p_pos = match.iloc[0]['Pos'] if not match.empty else "FLEX"
-                    p_team = match.iloc[0]['Team'] if not match.empty else ""
 
-                    st.session_state.draft_history.append({
-                        'pick': curr_p,
-                        'name': selected_player,
-                        'pos': p_pos,
-                        'team': p_team,
-                        'is_mine': mine,
-                        'is_ir': (mine and send_to_ir and len(st.session_state.my_ir) == 0)
-                    })
-
-                    if mine:
-                        if send_to_ir and len(st.session_state.my_ir) == 0:
-                            st.session_state.my_ir.append(selected_player)
-                        else:
-                            st.session_state.my_roster.append(selected_player)
-                    st.session_state.current_pick += 1
-                    st.rerun()
-        with act_col5:
-            if st.button("↩ Undo", help="Revert the last pick logged", use_container_width=True):
-                if st.session_state.draft_history:
+    with act_col5:
+        if st.button("↩ Undo", help="Revert the last pick logged (or user pick in practice mode)", use_container_width=True):
+            if st.session_state.draft_history:
+                if st.session_state.practice_mode and st.session_state.auto_advance:
+                    # Pop bot picks until we undo the user's pick
+                    while st.session_state.draft_history:
+                        last = st.session_state.draft_history.pop()
+                        st.session_state.current_pick = max(1, st.session_state.current_pick - 1)
+                        if last['is_mine']:
+                            p_name = last['name']
+                            if last['is_ir'] and p_name in st.session_state.my_ir:
+                                st.session_state.my_ir.remove(p_name)
+                            elif p_name in st.session_state.my_roster:
+                                st.session_state.my_roster.remove(p_name)
+                            break
+                else:
                     last_pick = st.session_state.draft_history.pop()
                     p_name = last_pick['name']
                     if last_pick['is_mine']:
@@ -355,7 +376,7 @@ with st.container():
                         elif p_name in st.session_state.my_roster:
                             st.session_state.my_roster.remove(p_name)
                     st.session_state.current_pick = max(1, st.session_state.current_pick - 1)
-                    st.rerun()
+                st.rerun()
 
 st.markdown("---")
 
