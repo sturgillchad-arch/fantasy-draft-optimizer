@@ -10,59 +10,130 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 1. MODERN TERMINAL CSS INJECTION
+# 1. ADAPTIVE LIGHT/DARK DUAL-THEME TERMINAL CSS
 st.markdown("""
 <style>
+    /* CSS Variables for Dynamic Theme Adaptation */
+    :root {
+        --war-bg-card: #ffffff;
+        --war-border: #cbd5e1;
+        --war-border-darker: #94a3b8;
+        --war-text-main: #0f172a;
+        --war-text-sub: #475569;
+        --war-subtle-bg: #f8fafc;
+        --war-row-hover: #e2e8f0;
+    }
+
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --war-bg-card: #111827;
+            --war-border: #1f2937;
+            --war-border-darker: #374151;
+            --war-text-main: #f9fafb;
+            --war-text-sub: #9ca3af;
+            --war-subtle-bg: #1f2937;
+            --war-row-hover: #1e293b;
+        }
+    }
+
+    /* Streamlit light-theme container hook */
+    [data-theme="light"] {
+        --war-bg-card: #ffffff;
+        --war-border: #cbd5e1;
+        --war-border-darker: #94a3b8;
+        --war-text-main: #0f172a;
+        --war-text-sub: #475569;
+        --war-subtle-bg: #f8fafc;
+        --war-row-hover: #e2e8f0;
+    }
+
+    [data-theme="dark"] {
+        --war-bg-card: #111827;
+        --war-border: #1f2937;
+        --war-border-darker: #374151;
+        --war-text-main: #f9fafb;
+        --war-text-sub: #9ca3af;
+        --war-subtle-bg: #1f2937;
+        --war-row-hover: #1e293b;
+    }
+
+    /* Executive HUD & Container Cards */
     .metric-card {
-        background-color: #111827;
-        border: 1px solid #1f2937;
+        background-color: var(--war-bg-card);
+        border: 2px solid var(--war-border);
         border-radius: 8px;
         padding: 12px 16px;
         margin-bottom: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
     }
     .hud-title {
-        color: #9ca3af;
-        font-size: 0.72rem;
+        color: var(--war-text-sub);
+        font-size: 0.74rem;
         text-transform: uppercase;
         letter-spacing: 0.05em;
         margin-bottom: 4px;
-        font-weight: 600;
+        font-weight: 700;
     }
     .hud-value {
-        color: #f9fafb;
-        font-size: 1.3rem;
-        font-weight: 700;
+        color: var(--war-text-main);
+        font-size: 1.35rem;
+        font-weight: 800;
         line-height: 1.2;
     }
     .hud-sub {
-        color: #10b981;
+        color: #059669;
         font-size: 0.75rem;
-        font-weight: 500;
+        font-weight: 600;
     }
+
+    /* Custom Priority Target Row Container */
+    .prio-row-container {
+        background-color: var(--war-bg-card);
+        border: 1px solid var(--war-border);
+        border-radius: 6px;
+        padding: 5px 10px;
+        margin-bottom: 4px;
+    }
+    .prio-row-container:hover {
+        background-color: var(--war-row-hover);
+    }
+
+    .prio-header-bar {
+        display: flex;
+        color: var(--war-text-sub);
+        font-size: 0.74rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        padding: 6px 12px;
+        border-bottom: 2px solid var(--war-border);
+        margin-bottom: 6px;
+    }
+
+    /* Tabs styling */
     .stTabs [data-baseweb="tab-list"] {
         gap: 4px;
+        border-bottom: 2px solid var(--war-border);
     }
     .stTabs [data-baseweb="tab"] {
         padding: 6px 14px;
         font-size: 0.85rem;
+        font-weight: 600;
         border-radius: 6px 6px 0 0;
     }
-    thead tr th {
-        font-size: 0.78rem !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.03em !important;
-    }
+
+    /* Badges */
     .badge-pos {
         font-size: 0.75rem;
         font-weight: 700;
-        padding: 2px 6px;
+        padding: 2px 7px;
         border-radius: 4px;
+        letter-spacing: 0.02em;
     }
-    .badge-rb { background-color: #1e3a8a; color: #bfdbfe; }
-    .badge-wr { background-color: #064e3b; color: #a7f3d0; }
-    .badge-qb { background-color: #7c2d12; color: #fed7aa; }
-    .badge-te { background-color: #713f12; color: #fef08a; }
-    .badge-other { background-color: #374151; color: #f3f4f6; }
+    .badge-rb { background-color: #2563eb; color: #ffffff; }
+    .badge-wr { background-color: #059669; color: #ffffff; }
+    .badge-qb { background-color: #ea580c; color: #ffffff; }
+    .badge-te { background-color: #d97706; color: #ffffff; }
+    .badge-other { background-color: #475569; color: #ffffff; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -181,6 +252,9 @@ with st.sidebar.expander("📂 Data Feeds & Backup", expanded=False):
     if st.button("🔄 Sync Fresh NFL Wire Data", help="Clears cache and forces an immediate reload of player depth charts and injury wires."):
         fetch_player_pool.clear()
         st.rerun()
+
+    if st.button("Reset Entire Draft Board", type="secondary"):
+        reset_entire_board()
 
 TOTAL_PICKS = num_teams * total_rounds
 
@@ -333,10 +407,10 @@ with h1:
 with h2:
     if curr_p > TOTAL_PICKS:
         status_text = "🏁 DRAFT COMPLETED"
-        status_color = "#10b981"
+        status_color = "#059669"
     else:
         status_text = "🚨 ON THE CLOCK" if is_turn else f"In Queue ({gap} picks away)"
-        status_color = "#ef4444" if is_turn else "#3b82f6"
+        status_color = "#dc2626" if is_turn else "#2563eb"
     st.markdown(f"""
     <div class="metric-card">
         <div class="hud-title">Clock Status</div>
@@ -370,33 +444,34 @@ with h4:
     st.markdown(f"""
     <div class="metric-card">
         <div class="hud-title">Roster Allocation</div>
-        <div class="hud-value">{team_roster_count}/{total_rounds} Active <span style="font-size:0.9rem; color:#9ca3af;">(+{ir_count} IR)</span></div>
+        <div class="hud-value">{team_roster_count}/{total_rounds} Active <span style="font-size:0.9rem; color: var(--war-text-sub);">(+{ir_count} IR)</span></div>
         <div class="hud-sub">{(total_rounds - team_roster_count)} open spots</div>
     </div>
     """, unsafe_allow_html=True)
 
-# 10. DRAFT COUNTDOWN CLOCK COMPONENT
+# 10. DRAFT COUNTDOWN CLOCK COMPONENT (THEME-ADAPTIVE)
 clock_html = f"""
 <div id="clock-container" style="
-    background: #111827;
-    border: 1px solid {'#ef4444' if is_turn else '#374151'};
+    background: var(--war-bg-card, #ffffff);
+    border: 2px solid {'#dc2626' if is_turn else '#cbd5e1'};
     border-radius: 8px;
     padding: 10px 16px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 ">
     <div style="display: flex; align-items: center; gap: 14px;">
-        <span style="font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: {'#f87171' if is_turn else '#9ca3af'};">
+        <span style="font-size: 0.85rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: {'#dc2626' if is_turn else '#475569'};">
             {'🚨 ON THE CLOCK TIMER' if is_turn else '⏱️ DRAFT CLOCK'}
         </span>
         <div id="timer-display" style="
             font-size: 1.6rem;
             font-weight: 800;
             font-variant-numeric: tabular-nums;
-            color: #10b981;
+            color: #059669;
             min-width: 70px;
         ">00:{clock_seconds:02d}</div>
     </div>
@@ -406,19 +481,19 @@ clock_html = f"""
             color: #ffffff;
             border: none;
             border-radius: 5px;
-            padding: 5px 12px;
-            font-size: 0.8rem;
-            font-weight: 600;
+            padding: 6px 14px;
+            font-size: 0.82rem;
+            font-weight: 700;
             cursor: pointer;
         ">Pause</button>
         <button onclick="resetClock()" style="
-            background: #374151;
-            color: #f3f4f6;
+            background: #64748b;
+            color: #ffffff;
             border: none;
             border-radius: 5px;
-            padding: 5px 12px;
-            font-size: 0.8rem;
-            font-weight: 600;
+            padding: 6px 14px;
+            font-size: 0.82rem;
+            font-weight: 700;
             cursor: pointer;
         ">Reset</button>
     </div>
@@ -467,11 +542,11 @@ clock_html = f"""
         el.innerText = (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs;
 
         if (remaining <= 5) {{
-            el.style.color = '#ef4444';
+            el.style.color = '#dc2626';
         }} else if (remaining <= 15) {{
-            el.style.color = '#f59e0b';
+            el.style.color = '#d97706';
         }} else {{
-            el.style.color = '#10b981';
+            el.style.color = '#059669';
         }}
     }}
 
@@ -643,8 +718,9 @@ with c_board:
         by=['VORP', 'ADP'], ascending=[False, True]
     ).head(prio_limit).reset_index(drop=True)
 
+    # High-Contrast Header Bar
     st.markdown("""
-    <div style="display: flex; color: #9ca3af; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; padding: 4px 12px; margin-bottom: 2px;">
+    <div class="prio-header-bar">
         <div style="flex: 1.2;">Action</div>
         <div style="flex: 3.5;">Player</div>
         <div style="flex: 1.0;">Pos</div>
@@ -661,6 +737,7 @@ with c_board:
         st.info("No available players matching this positional filter.")
     else:
         for idx, row in priority_display.iterrows():
+            st.markdown("<div class='prio-row-container'>", unsafe_allow_html=True)
             c_btn, c_name, c_pos, c_team, c_proj, c_vorp, c_adp, c_surv, c_act = st.columns(
                 [1.2, 3.5, 1.0, 1.0, 1.4, 1.4, 1.2, 1.8, 1.4]
             )
@@ -671,31 +748,33 @@ with c_board:
 
             with c_name:
                 health_icon = "🚨 " if row['Status'] in ["IR", "Out", "Suspended"] else ("⚠️ " if row['Status'] in ["Questionable", "Doubtful", "PUP"] else "")
-                st.markdown(f"<div style='font-size: 0.88rem; font-weight: 700; color: #f9fafb; padding-top: 4px;'>{health_icon}{row['Name']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size: 0.88rem; font-weight: 700; color: var(--war-text-main); padding-top: 4px;'>{health_icon}{row['Name']}</div>", unsafe_allow_html=True)
 
             with c_pos:
                 badge_class = f"badge-{row['Pos'].lower()}" if row['Pos'] in ['RB', 'WR', 'QB', 'TE'] else "badge-other"
                 st.markdown(f"<div style='padding-top: 4px;'><span class='badge-pos {badge_class}'>{row['Pos']}</span></div>", unsafe_allow_html=True)
 
             with c_team:
-                st.markdown(f"<div style='font-size: 0.82rem; color: #9ca3af; padding-top: 4px;'>{row['Team']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size: 0.82rem; font-weight: 600; color: var(--war-text-sub); padding-top: 4px;'>{row['Team']}</div>", unsafe_allow_html=True)
 
             with c_proj:
-                st.markdown(f"<div style='font-size: 0.85rem; font-weight: 600; color: #d1d5db; text-align: right; padding-top: 4px;'>{row['ProjPts']:.1f}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size: 0.85rem; font-weight: 700; color: var(--war-text-main); text-align: right; padding-top: 4px;'>{row['ProjPts']:.1f}</div>", unsafe_allow_html=True)
 
             with c_vorp:
-                st.markdown(f"<div style='font-size: 0.85rem; font-weight: 700; color: #60a5fa; text-align: right; padding-top: 4px;'>+{row['VORP']:.1f}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size: 0.85rem; font-weight: 800; color: #2563eb; text-align: right; padding-top: 4px;'>+{row['VORP']:.1f}</div>", unsafe_allow_html=True)
 
             with c_adp:
-                st.markdown(f"<div style='font-size: 0.82rem; color: #9ca3af; text-align: right; padding-top: 4px;'>{row['ADP']:.0f}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size: 0.82rem; font-weight: 600; color: var(--war-text-sub); text-align: right; padding-top: 4px;'>{row['ADP']:.0f}</div>", unsafe_allow_html=True)
 
             with c_surv:
-                surv_color = "#10b981" if row['Survival %'] >= 70 else ("#f59e0b" if row['Survival %'] >= 35 else "#ef4444")
-                st.markdown(f"<div style='font-size: 0.85rem; font-weight: 700; color: {surv_color}; text-align: right; padding-top: 4px;'>{row['Survival %']}%</div>", unsafe_allow_html=True)
+                surv_color = "#059669" if row['Survival %'] >= 70 else ("#d97706" if row['Survival %'] >= 35 else "#dc2626")
+                st.markdown(f"<div style='font-size: 0.85rem; font-weight: 800; color: {surv_color}; text-align: right; padding-top: 4px;'>{row['Survival %']}%</div>", unsafe_allow_html=True)
 
             with c_act:
-                act_color = "#3b82f6" if "Safe" in row['Action'] else ("#ef4444" if "Draft" in row['Action'] else "#9ca3af")
-                st.markdown(f"<div style='font-size: 0.8rem; font-weight: 600; color: {act_color}; text-align: right; padding-top: 4px;'>{row['Action']}</div>", unsafe_allow_html=True)
+                act_color = "#2563eb" if "Safe" in row['Action'] else ("#dc2626" if "Draft" in row['Action'] else "#64748b")
+                st.markdown(f"<div style='font-size: 0.8rem; font-weight: 700; color: {act_color}; text-align: right; padding-top: 4px;'>{row['Action']}</div>", unsafe_allow_html=True)
+
+            st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -726,16 +805,16 @@ with c_board:
 
         def style_draft_grid(val):
             if "—" in val:
-                return "color: #4b5563; background-color: #0f172a;"
+                return "color: #94a3b8; background-color: var(--war-subtle-bg);"
             if "(RB)" in val:
-                return "background-color: #1e3a8a; color: #bfdbfe; font-weight: 600;"
+                return "background-color: #2563eb; color: #ffffff; font-weight: 700;"
             if "(WR)" in val:
-                return "background-color: #064e3b; color: #a7f3d0; font-weight: 600;"
+                return "background-color: #059669; color: #ffffff; font-weight: 700;"
             if "(QB)" in val:
-                return "background-color: #7c2d12; color: #fed7aa; font-weight: 600;"
+                return "background-color: #ea580c; color: #ffffff; font-weight: 700;"
             if "(TE)" in val:
-                return "background-color: #713f12; color: #fef08a; font-weight: 600;"
-            return "background-color: #374151; color: #f3f4f6;"
+                return "background-color: #d97706; color: #ffffff; font-weight: 700;"
+            return "background-color: #475569; color: #ffffff; font-weight: 700;"
 
         try:
             styled_board = board_df.style.map(style_draft_grid)
