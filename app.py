@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import requests
@@ -69,13 +70,17 @@ if 'auto_advance' not in st.session_state:
     st.session_state.auto_advance = True
 
 # 3. SIDEBAR CONFIGURATION (ACCORDIONS)
+with st.sidebar.expander("⏱️ Draft Clock & Audio Settings", expanded=True):
+    clock_seconds = st.number_input("Clock Duration (Seconds):", min_value=15, max_value=300, value=60, step=5)
+    enable_sound = st.toggle("Enable Audio Warnings", value=True, help="Plays countdown beeps at 10s and an alarm at 0s using Web Audio API.")
+
 with st.sidebar.expander("⚙️ League Settings", expanded=False):
     num_teams = st.number_input("League Size (Teams):", 6, 16, 10, 1)
     total_rounds = st.number_input("Total Rounds:", 10, 25, 16, 1)
     my_slot = st.selectbox("Draft Position:", list(range(1, num_teams + 1)), index=min(8, num_teams - 1))
     top_n = st.slider("Top Recommendations Count:", 5, 10, 6)
 
-with st.sidebar.expander("🎮 Practice Draft Simulation", expanded=True):
+with st.sidebar.expander("🎮 Practice Draft Simulation", expanded=False):
     practice_toggle = st.toggle("Enable Practice Mode", value=st.session_state.practice_mode)
     st.session_state.practice_mode = practice_toggle
     auto_adv_toggle = st.toggle("Auto-Fast-Forward to My Pick", value=st.session_state.auto_advance,
@@ -189,7 +194,6 @@ def simulate_bot_picks(target_pick):
         })
         st.session_state.current_pick += 1
 
-# Auto-advance bots at the start of draft if needed
 if st.session_state.practice_mode and st.session_state.auto_advance and st.session_state.current_pick not in my_picks and st.session_state.current_pick <= TOTAL_PICKS:
     next_user_pick = [p for p in my_picks if p >= st.session_state.current_pick]
     target = next_user_pick[0] if next_user_pick else TOTAL_PICKS + 1
@@ -304,7 +308,158 @@ with h4:
     </div>
     """, unsafe_allow_html=True)
 
-# 9. IN-LINE ACTION CONSOLE
+# 9. INTEGRATED DRAFT CLOCK WITH SYNTHESIZED WEB AUDIO
+clock_html = f"""
+<div id="clock-container" style="
+    background: #111827;
+    border: 1px solid {'#ef4444' if is_turn else '#374151'};
+    border-radius: 8px;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+">
+    <div style="display: flex; align-items: center; gap: 14px;">
+        <span style="font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: {'#f87171' if is_turn else '#9ca3af'};">
+            {'🚨 ON THE CLOCK TIMER' if is_turn else '⏱️ DRAFT CLOCK'}
+        </span>
+        <div id="timer-display" style="
+            font-size: 1.6rem;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+            color: #10b981;
+            min-width: 70px;
+        ">00:{clock_seconds:02d}</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px;">
+        <button id="btn-toggle" onclick="toggleClock()" style="
+            background: #2563eb;
+            color: #ffffff;
+            border: none;
+            border-radius: 5px;
+            padding: 5px 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+        ">Pause</button>
+        <button onclick="resetClock()" style="
+            background: #374151;
+            color: #f3f4f6;
+            border: none;
+            border-radius: 5px;
+            padding: 5px 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+        ">Reset</button>
+    </div>
+</div>
+
+<script>
+    let duration = {clock_seconds};
+    let remaining = duration;
+    let isRunning = true;
+    let soundEnabled = {'true' if enable_sound else 'false'};
+    let timerInterval = null;
+    let audioCtx = null;
+
+    function getAudioCtx() {{
+        if (!audioCtx) {{
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContext();
+        }}
+        if (audioCtx.state === 'suspended') {{
+            audioCtx.resume();
+        }}
+        return audioCtx;
+    }}
+
+    function playTone(freq, dur, type = 'sine') {{
+        if (!soundEnabled) return;
+        try {{
+            const ctx = getAudioCtx();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, ctx.currentTime);
+            gain.gain.setValueAtTime(0.12, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + dur);
+        }} catch(e) {{}}
+    }}
+
+    function updateDisplay() {{
+        const el = document.getElementById('timer-display');
+        const mins = Math.floor(remaining / 60);
+        const secs = remaining % 60;
+        el.innerText = (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs;
+
+        if (remaining <= 5) {{
+            el.style.color = '#ef4444';
+        }} else if (remaining <= 15) {{
+            el.style.color = '#f59e0b';
+        }} else {{
+            el.style.color = '#10b981';
+        }}
+    }}
+
+    function tick() {{
+        if (remaining > 0) {{
+            remaining--;
+            updateDisplay();
+
+            if (remaining <= 10 && remaining > 0) {{
+                playTone(880, 0.08, 'triangle');
+            }} else if (remaining === 0) {{
+                playTone(440, 0.4, 'sawtooth');
+                setTimeout(() => playTone(330, 0.6, 'sawtooth'), 200);
+            }}
+        }} else {{
+            clearInterval(timerInterval);
+            isRunning = false;
+            document.getElementById('btn-toggle').innerText = 'Start';
+        }}
+    }}
+
+    function startTimer() {{
+        clearInterval(timerInterval);
+        timerInterval = setInterval(tick, 1000);
+        isRunning = true;
+        document.getElementById('btn-toggle').innerText = 'Pause';
+    }}
+
+    function toggleClock() {{
+        getAudioCtx();
+        if (isRunning) {{
+            clearInterval(timerInterval);
+            isRunning = false;
+            document.getElementById('btn-toggle').innerText = 'Start';
+        }} else {{
+            if (remaining <= 0) remaining = duration;
+            startTimer();
+        }}
+    }}
+
+    function resetClock() {{
+        getAudioCtx();
+        clearInterval(timerInterval);
+        remaining = duration;
+        updateDisplay();
+        startTimer();
+    }}
+
+    updateDisplay();
+    startTimer();
+</script>
+"""
+components.html(clock_html, height=72)
+
+# 10. IN-LINE ACTION CONSOLE
 with st.container():
     act_col1, act_col2, act_col3, act_col4, act_col5 = st.columns([2.8, 1.1, 1.0, 1.3, 0.9])
     with act_col1:
@@ -342,7 +497,6 @@ with st.container():
                 
                 st.session_state.current_pick += 1
                 
-                # AUTO-ADVANCE TRIGGER: Fast-forward bots automatically to your next turn
                 if st.session_state.practice_mode and st.session_state.auto_advance:
                     next_user_pick = [p for p in my_picks if p >= st.session_state.current_pick]
                     if next_user_pick:
@@ -356,7 +510,6 @@ with st.container():
         if st.button("↩ Undo", help="Revert the last pick logged (or user pick in practice mode)", use_container_width=True):
             if st.session_state.draft_history:
                 if st.session_state.practice_mode and st.session_state.auto_advance:
-                    # Pop bot picks until we undo the user's pick
                     while st.session_state.draft_history:
                         last = st.session_state.draft_history.pop()
                         st.session_state.current_pick = max(1, st.session_state.current_pick - 1)
@@ -380,7 +533,7 @@ with st.container():
 
 st.markdown("---")
 
-# 10. TERMINAL SPLIT: WORKSPACE & ROSTER
+# 11. TERMINAL SPLIT: WORKSPACE & ROSTER
 c_board, c_roster = st.columns([3.1, 1.9])
 
 TABLE_CONFIG = {
