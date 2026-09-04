@@ -70,7 +70,7 @@ if 'auto_advance' not in st.session_state:
     st.session_state.auto_advance = True
 
 # 3. SIDEBAR CONFIGURATION (ACCORDIONS)
-with st.sidebar.expander("⏱️ Draft Clock & Audio Settings", expanded=True):
+with st.sidebar.expander("⏱️ Draft Clock & Audio Settings", expanded=False):
     clock_seconds = st.number_input("Clock Duration (Seconds):", min_value=15, max_value=300, value=60, step=5)
     enable_sound = st.toggle("Enable Audio Warnings", value=True, help="Plays countdown beeps at 10s and an alarm at 0s using Web Audio API.")
 
@@ -80,7 +80,7 @@ with st.sidebar.expander("⚙️ League Settings", expanded=False):
     my_slot = st.selectbox("Draft Position:", list(range(1, num_teams + 1)), index=min(8, num_teams - 1))
     top_n = st.slider("Top Recommendations Count:", 5, 10, 6)
 
-with st.sidebar.expander("🎮 Practice Draft Simulation", expanded=False):
+with st.sidebar.expander("🎮 Practice Draft Simulation", expanded=True):
     practice_toggle = st.toggle("Enable Practice Mode", value=st.session_state.practice_mode)
     st.session_state.practice_mode = practice_toggle
     auto_adv_toggle = st.toggle("Auto-Fast-Forward to My Pick", value=st.session_state.auto_advance,
@@ -118,7 +118,13 @@ def generate_my_picks(slot, teams, rounds):
 my_picks = generate_my_picks(my_slot, num_teams, total_rounds)
 BASELINES = {'QB': num_teams, 'RB': int(num_teams * 3.0), 'WR': int(num_teams * 3.0), 'TE': num_teams, 'DST': num_teams, 'K': num_teams}
 
-# 4. DATA ENGINE (Sleeper Public API)
+# 4. ROBUST DATA ENGINE (Active NFL Rosters Only)
+NFL_TEAMS = {
+    'ARI', 'ATL', 'BAL', 'BUF', 'CAR', 'CHI', 'CIN', 'CLE', 'DAL', 'DEN',
+    'DET', 'GB', 'HOU', 'IND', 'JAX', 'KC', 'LV', 'LAC', 'LAR', 'MIA',
+    'MIN', 'NE', 'NO', 'NYG', 'NYJ', 'PHI', 'PIT', 'SF', 'SEA', 'TB', 'TEN', 'WAS'
+}
+
 @st.cache_data(ttl=3600)
 def fetch_player_pool():
     try:
@@ -126,10 +132,15 @@ def fetch_player_pool():
         res = requests.get(url, timeout=12).json()
         pool = []
         for p_id, p in res.items():
-            if p.get("active") and p.get("position") in ['QB', 'RB', 'WR', 'TE', 'DEF', 'K']:
-                pos = 'DST' if p.get('position') == 'DEF' else p.get('position')
-                rank = float(p.get('search_rank') or 999)
+            pos = 'DST' if p.get('position') == 'DEF' else p.get('position')
+            team = p.get('team')
+            rank = p.get('search_rank')
+
+            # FILTER: Must be on an active 32-team NFL franchise, active flag true, and have a valid search rank
+            if p.get("active") and pos in ['QB', 'RB', 'WR', 'TE', 'DST', 'K'] and team in NFL_TEAMS and rank is not None and rank > 0:
+                rank = float(rank)
                 
+                # Baseline scoring curves
                 if pos == 'QB':
                     proj = max(380.0 - (rank * 1.8), 120.0)
                 elif pos in ['RB', 'WR']:
@@ -138,19 +149,20 @@ def fetch_player_pool():
                     proj = max(215.0 - (rank * 1.4), 25.0)
                 elif pos == 'K':
                     proj = max(135.0 - (rank * 0.15), 90.0)
-                else:
+                else:  # DST
                     proj = max(125.0 - (rank * 0.15), 75.0)
                     
                 pool.append({
                     "Name": p.get("full_name") or f"{p.get('first_name')} {p.get('last_name')}",
                     "Pos": pos,
-                    "Team": p.get("team") or "FA",
+                    "Team": team,
                     "ADP": rank,
                     "ProjPts": round(proj, 1),
                     "Status": p.get("injury_status") or "Healthy",
                     "Notes": p.get("injury_notes") or "Active"
                 })
-        return pd.DataFrame(pool).sort_values(by="ADP").reset_index(drop=True)
+        df = pd.DataFrame(pool).sort_values(by="ADP").reset_index(drop=True)
+        return df
     except Exception:
         data = [
             {"Name": "Jahmyr Gibbs", "Pos": "RB", "Team": "DET", "ADP": 1.0, "ProjPts": 330.0, "Status": "Healthy", "Notes": "Active"},
@@ -308,7 +320,7 @@ with h4:
     </div>
     """, unsafe_allow_html=True)
 
-# 9. INTEGRATED DRAFT CLOCK WITH SYNTHESIZED WEB AUDIO
+# 9. DRAFT COUNTDOWN CLOCK COMPONENT
 clock_html = f"""
 <div id="clock-container" style="
     background: #111827;
@@ -507,7 +519,7 @@ with st.container():
                 st.rerun()
 
     with act_col5:
-        if st.button("↩ Undo", help="Revert the last pick logged (or user pick in practice mode)", use_container_width=True):
+        if st.button("↩ Undo", help="Revert the last pick logged", use_container_width=True):
             if st.session_state.draft_history:
                 if st.session_state.practice_mode and st.session_state.auto_advance:
                     while st.session_state.draft_history:
