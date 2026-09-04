@@ -3,7 +3,11 @@ import pandas as pd
 import numpy as np
 import requests
 
-st.set_page_config(page_title="Draft Optimizer War Room", layout="wide")
+st.set_page_config(
+    page_title="Draft Optimizer War Room",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 # 1. STATE INITIALIZATION
 if 'draft_history' not in st.session_state:
@@ -15,44 +19,47 @@ if 'my_ir' not in st.session_state:
 if 'current_pick' not in st.session_state:
     st.session_state.current_pick = 1
 
-# 2. SIDEBAR LEAGUE & POSITION CONFIGURATION
-st.sidebar.header(
-    "Draft & League Settings",
-    help="Configure draft slot, team counts, and roster limits for any league format."
-)
+# 2. COLLAPSIBLE SIDEBAR CONFIGURATION (ACCORDIONS)
+with st.sidebar.expander("⚙️ League & Draft Setup", expanded=False):
+    num_teams = st.number_input(
+        "League Size (Teams):",
+        min_value=6,
+        max_value=16,
+        value=10,
+        step=1,
+        help="Total number of teams in the draft."
+    )
 
-num_teams = st.sidebar.number_input(
-    "League Size (Teams):",
-    min_value=6,
-    max_value=16,
-    value=10,
-    step=1,
-    help="Total number of teams in the draft."
-)
+    total_rounds = st.number_input(
+        "Total Rounds:",
+        min_value=10,
+        max_value=25,
+        value=16,
+        step=1,
+        help="Total rounds in the draft (starters + bench)."
+    )
 
-total_rounds = st.sidebar.number_input(
-    "Total Rounds:",
-    min_value=10,
-    max_value=25,
-    value=16,
-    step=1,
-    help="Total rounds in the draft (starters + bench)."
-)
+    my_slot = st.selectbox(
+        "Your Draft Position:",
+        options=list(range(1, num_teams + 1)),
+        index=min(8, num_teams - 1),  # Defaults to 9th position
+        help="Select your draft slot (1 through N)."
+    )
 
-my_slot = st.sidebar.selectbox(
-    "Your Draft Position:",
-    options=list(range(1, num_teams + 1)),
-    index=min(8, num_teams - 1),  # Defaults to 9th position
-    help="Select your draft slot (1 through N)."
-)
+    top_n_recommendations = st.slider(
+        "Top Targets to Highlight:",
+        min_value=5,
+        max_value=10,
+        value=7,
+        help="Number of optimal available players dynamically highlighted above the tabs."
+    )
 
-top_n_recommendations = st.sidebar.slider(
-    "Top Targets to Highlight:",
-    min_value=5,
-    max_value=10,
-    value=7,
-    help="Number of optimal available players dynamically highlighted above the tabs every time a pick is logged."
-)
+with st.sidebar.expander("📂 Data Feeds & Uploads", expanded=False):
+    uploaded = st.file_uploader(
+        "Upload Projections CSV (Optional)",
+        type=["csv"],
+        help="Upload custom projections or default to live NFL data."
+    )
 
 TOTAL_PICKS = num_teams * total_rounds
 
@@ -131,12 +138,6 @@ def fetch_player_pool():
         ]
         return pd.DataFrame(data)
 
-st.sidebar.markdown("---")
-st.sidebar.header(
-    "Data Feeds",
-    help="Upload your custom CSV containing projections or default to live NFL data."
-)
-uploaded = st.sidebar.file_uploader("Upload Projections CSV (Optional)", type=["csv"])
 if uploaded:
     raw_df = pd.read_csv(uploaded)
 else:
@@ -189,9 +190,9 @@ def simulate_survival(adp, current_pick, target_gap, n_sims=300):
 
 scored_df['Survival %'] = scored_df['ADP'].apply(lambda x: simulate_survival(x, curr_p, gap))
 
-# 7. SIDEBAR CONTROLS
-st.sidebar.markdown("---")
+# 7. SIDEBAR ACTIVE DRAFT CONTROLS (ALWAYS VISIBLE & CLEAN)
 curr_round = ((curr_p - 1) // num_teams) + 1
+st.sidebar.markdown("---")
 st.sidebar.subheader(
     f"Round {curr_round} • Pick #{curr_p} / {TOTAL_PICKS}",
     help="Current overall pick counter and round number."
@@ -292,7 +293,6 @@ with c_main:
         help="Automatically updates after each pick. Shows the highest-VORP players available for your roster right now, along with their odds to survive until your next turn."
     )
     
-    # Filter out K and DST from dominating top priority queue
     top_targets = display_scored[~display_scored['Pos'].isin(['K', 'DST'])].sort_values(
         by=['VORP', 'ADP'], ascending=[False, True]
     ).head(top_n_recommendations)
