@@ -52,16 +52,6 @@ st.markdown("""
         text-transform: uppercase !important;
         letter-spacing: 0.03em !important;
     }
-    /* Compact Row Styling for Priority Targets List */
-    .prio-row {
-        display: flex;
-        align-items: center;
-        background: #111827;
-        border: 1px solid #1f2937;
-        border-radius: 6px;
-        padding: 6px 12px;
-        margin-bottom: 5px;
-    }
     .badge-pos {
         font-size: 0.75rem;
         font-weight: 700;
@@ -293,7 +283,6 @@ def strategy_tag(row):
 
 scored_df['Action'] = scored_df.apply(strategy_tag, axis=1)
 
-# Helper function to execute a draft pick selection
 def execute_pick(player_name, is_my_pick, stash_to_ir=False):
     match = raw_df[raw_df['Name'] == player_name]
     p_pos = match.iloc[0]['Pos'] if not match.empty else "FLEX"
@@ -605,7 +594,6 @@ display_scored = scored_df.copy()
 display_scored['Status Badge'] = display_scored['Status'].apply(format_status_badge)
 
 with c_board:
-    # PRIORITY TARGET CONTROLS (PILLS + SHOW COUNT)
     ctrl_title_col, ctrl_filter_col, ctrl_count_col = st.columns([1.6, 2.0, 1.4])
     
     with ctrl_title_col:
@@ -623,12 +611,11 @@ with c_board:
         prio_limit = st.selectbox(
             "Show Count",
             options=[5, 8, 10, 15],
-            index=2,  # Default to Top 10
+            index=2,
             format_func=lambda x: f"Top {x} Available",
             label_visibility="collapsed"
         )
 
-    # Filter pool based on pills
     if prio_pos_filter == "ALL":
         target_pool = display_scored[~display_scored['Pos'].isin(['K', 'DST'])]
     elif prio_pos_filter == "FLEX":
@@ -642,7 +629,6 @@ with c_board:
         by=['VORP', 'ADP'], ascending=[False, True]
     ).head(prio_limit).reset_index(drop=True)
 
-    # ROW-BY-ROW PRIORITY VIEW WITH DIRECT DRAFT BUTTONS
     st.markdown("""
     <div style="display: flex; color: #9ca3af; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; padding: 4px 12px; margin-bottom: 2px;">
         <div style="flex: 1.2;">Action</div>
@@ -699,7 +685,6 @@ with c_board:
 
     st.markdown("---")
 
-    # POSITIONAL TABS & DRAFT BOARD
     tab_board, tab_all, tab_rb, tab_wr, tab_te, tab_qb, tab_dst_k, tab_injury = st.tabs(
         ["📋 Visual Grid", "🔥 All VORP", "🏃 RB", "🙌 WR", "🧱 TE", "🎯 QB", "🛡️ D/ST & K", "🏥 IR Hub"]
     )
@@ -801,7 +786,7 @@ with c_roster:
     k = (get_slot_assignment('K', taken) + ["—"])[0]
     taken.append(k)
     
-    bench = [p for p in roster_pool['Name'].tolist() if p not in taken and p != "—"]
+    bench_names = [p for p in roster_pool['Name'].tolist() if p not in taken and p != "—"]
     
     starter_df = pd.DataFrame([
         {"Slot": "QB", "Player": qb},
@@ -815,15 +800,52 @@ with c_roster:
         {"Slot": "K", "Player": k},
     ])
 
-    st.dataframe(starter_df, use_container_width=True, hide_index=True)
+    st.dataframe(
+        starter_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Slot": st.column_config.TextColumn("Slot", width="small"),
+            "Player": st.column_config.TextColumn("Starter")
+        }
+    )
 
-    if bench:
-        st.caption(f"**Bench ({len(bench)}):** " + ", ".join(bench))
+    # EXPANDED BENCH SECTION (ROW-BY-ROW POSITIONAL BREAKDOWN)
+    st.markdown(f"###### 🪑 Bench ({len(bench_names)} Reserves)")
+    if bench_names:
+        bench_df = roster_pool[roster_pool['Name'].isin(bench_names)][['Name', 'Pos', 'Team', 'ProjPts', 'Status']].copy()
+        bench_df.insert(0, "Slot", [f"BN{i+1}" for i in range(len(bench_df))])
+        st.dataframe(
+            bench_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Slot": st.column_config.TextColumn("Slot", width="small"),
+                "Name": st.column_config.TextColumn("Player"),
+                "Pos": st.column_config.TextColumn("Pos", width="small"),
+                "Team": st.column_config.TextColumn("NFL", width="small"),
+                "ProjPts": st.column_config.NumberColumn("Proj", format="%.1f"),
+                "Status": st.column_config.TextColumn("Health", width="small")
+            }
+        )
     else:
-        st.caption("**Bench:** No reserves yet.")
+        st.caption("No bench reserves drafted yet.")
 
     if st.session_state.my_ir:
-        st.markdown(f"🏥 **IR Slot:** {', '.join(st.session_state.my_ir)}")
+        st.markdown(f"###### 🏥 IR Slot")
+        ir_df = raw_df[raw_df['Name'].isin(st.session_state.my_ir)][['Name', 'Pos', 'Team', 'Status', 'Notes']].copy()
+        st.dataframe(
+            ir_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Name": st.column_config.TextColumn("Player"),
+                "Pos": st.column_config.TextColumn("Pos", width="small"),
+                "Team": st.column_config.TextColumn("NFL", width="small"),
+                "Status": st.column_config.TextColumn("Status", width="small"),
+                "Notes": st.column_config.TextColumn("Report")
+            }
+        )
 
     st.markdown("---")
     st.markdown("##### ⚡ Tier Scarcity Cliff")
