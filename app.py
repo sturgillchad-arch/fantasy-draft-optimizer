@@ -4,12 +4,60 @@ import numpy as np
 import requests
 
 st.set_page_config(
-    page_title="Draft Optimizer War Room",
+    page_title="War Room Terminal • Slot 9",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# 1. STATE INITIALIZATION
+# 1. MODERN TERMINAL CSS INJECTION
+st.markdown("""
+<style>
+    /* Metric & Card Ergonomics */
+    .metric-card {
+        background-color: #111827;
+        border: 1px solid #1f2937;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-bottom: 12px;
+    }
+    .hud-title {
+        color: #9ca3af;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 4px;
+        font-weight: 600;
+    }
+    .hud-value {
+        color: #f9fafb;
+        font-size: 1.35rem;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+    .hud-sub {
+        color: #10b981;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+    /* Tab & Grid density */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 4px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        padding: 6px 14px;
+        font-size: 0.85rem;
+        border-radius: 6px 6px 0 0;
+    }
+    /* Streamline Dataframe headers */
+    thead tr th {
+        font-size: 0.8rem !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.03em !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# 2. STATE MANAGEMENT
 if 'draft_history' not in st.session_state:
     st.session_state.draft_history = []
 if 'my_roster' not in st.session_state:
@@ -19,76 +67,40 @@ if 'my_ir' not in st.session_state:
 if 'current_pick' not in st.session_state:
     st.session_state.current_pick = 1
 
-# 2. COLLAPSIBLE SIDEBAR CONFIGURATION (ACCORDIONS)
-with st.sidebar.expander("⚙️ League & Draft Setup", expanded=False):
-    num_teams = st.number_input(
-        "League Size (Teams):",
-        min_value=6,
-        max_value=16,
-        value=10,
-        step=1,
-        help="Total number of teams in the draft."
-    )
+# 3. SIDEBAR CONFIGURATION (ACCORDIONS)
+with st.sidebar.expander("⚙️ League Settings", expanded=False):
+    num_teams = st.number_input("League Size (Teams):", 6, 16, 10, 1)
+    total_rounds = st.number_input("Total Rounds:", 10, 25, 16, 1)
+    my_slot = st.selectbox("Draft Position:", list(range(1, num_teams + 1)), index=min(8, num_teams - 1))
+    top_n = st.slider("Top Recommendations Count:", 5, 10, 6)
 
-    total_rounds = st.number_input(
-        "Total Rounds:",
-        min_value=10,
-        max_value=25,
-        value=16,
-        step=1,
-        help="Total rounds in the draft (starters + bench)."
-    )
-
-    my_slot = st.selectbox(
-        "Your Draft Position:",
-        options=list(range(1, num_teams + 1)),
-        index=min(8, num_teams - 1),  # Defaults to 9th position
-        help="Select your draft slot (1 through N)."
-    )
-
-    top_n_recommendations = st.slider(
-        "Top Targets to Highlight:",
-        min_value=5,
-        max_value=10,
-        value=7,
-        help="Number of optimal available players dynamically highlighted above the tabs."
-    )
-
-with st.sidebar.expander("📂 Data Feeds & Uploads", expanded=False):
-    uploaded = st.file_uploader(
-        "Upload Projections CSV (Optional)",
-        type=["csv"],
-        help="Upload custom projections or default to live NFL data."
-    )
+with st.sidebar.expander("📂 Data Feeds & Backup", expanded=False):
+    uploaded = st.file_uploader("Upload Projections CSV", type=["csv"])
+    if st.button("Reset Entire Draft Board", type="secondary"):
+        st.session_state.draft_history = []
+        st.session_state.my_roster = []
+        st.session_state.my_ir = []
+        st.session_state.current_pick = 1
+        st.rerun()
 
 TOTAL_PICKS = num_teams * total_rounds
 
-# Generate dynamic snake pick schedule for selected draft slot
+# Generate dynamic snake pick schedule
 def generate_my_picks(slot, teams, rounds):
     picks = []
     for r in range(rounds):
         if r % 2 == 0:
-            # Odd round (Round 1, 3, 5...): 1 -> N
             p = (r * teams) + slot
         else:
-            # Even round (Round 2, 4, 6...): N -> 1
             p = (r * teams) + (teams - slot + 1)
         picks.append(p)
     return picks
 
 my_picks = generate_my_picks(my_slot, num_teams, total_rounds)
 
-# 3. BASELINE REPLACEMENT RANKS
-BASELINES = {
-    'QB': num_teams,
-    'RB': int(num_teams * 3.0),
-    'WR': int(num_teams * 3.0),
-    'TE': num_teams,
-    'DST': num_teams,
-    'K': num_teams
-}
+BASELINES = {'QB': num_teams, 'RB': int(num_teams * 3.0), 'WR': int(num_teams * 3.0), 'TE': num_teams, 'DST': num_teams, 'K': num_teams}
 
-# 4. DATA FETCHER (Sleeper Public API with Fallback)
+# 4. DATA ENGINE (Sleeper Public API)
 @st.cache_data(ttl=3600)
 def fetch_player_pool():
     try:
@@ -100,7 +112,6 @@ def fetch_player_pool():
                 pos = 'DST' if p.get('position') == 'DEF' else p.get('position')
                 rank = float(p.get('search_rank') or 999)
                 
-                # Baseline scoring curves
                 if pos == 'QB':
                     proj = max(380.0 - (rank * 1.8), 120.0)
                 elif pos in ['RB', 'WR']:
@@ -109,7 +120,7 @@ def fetch_player_pool():
                     proj = max(215.0 - (rank * 1.4), 25.0)
                 elif pos == 'K':
                     proj = max(135.0 - (rank * 0.15), 90.0)
-                else:  # DST
+                else:
                     proj = max(125.0 - (rank * 0.15), 75.0)
                     
                 pool.append({
@@ -121,8 +132,7 @@ def fetch_player_pool():
                     "Status": p.get("injury_status") or "Healthy",
                     "Notes": p.get("injury_notes") or "Active"
                 })
-        df = pd.DataFrame(pool).sort_values(by="ADP").reset_index(drop=True)
-        return df
+        return pd.DataFrame(pool).sort_values(by="ADP").reset_index(drop=True)
     except Exception:
         data = [
             {"Name": "Jahmyr Gibbs", "Pos": "RB", "Team": "DET", "ADP": 1.0, "ProjPts": 330.0, "Status": "Healthy", "Notes": "Active"},
@@ -138,11 +148,7 @@ def fetch_player_pool():
         ]
         return pd.DataFrame(data)
 
-if uploaded:
-    raw_df = pd.read_csv(uploaded)
-else:
-    raw_df = fetch_player_pool()
-
+raw_df = pd.read_csv(uploaded) if uploaded else fetch_player_pool()
 drafted_names = [d['name'] for d in st.session_state.draft_history]
 
 # 5. DYNAMIC VORP ENGINE
@@ -168,16 +174,13 @@ def calculate_dynamic_vorp(df, my_roster_names):
 available_df = raw_df[~raw_df['Name'].isin(drafted_names)].copy()
 scored_df = calculate_dynamic_vorp(available_df, st.session_state.my_roster)
 
-# 6. DYNAMIC TURN GAP & MONTE CARLO
+# 6. TURN CADENCE & SIMULATION
 curr_p = st.session_state.current_pick
 is_turn = curr_p in my_picks
 
 if is_turn:
     curr_idx = my_picks.index(curr_p)
-    if curr_idx < len(my_picks) - 1:
-        gap = my_picks[curr_idx + 1] - curr_p
-    else:
-        gap = 0
+    gap = (my_picks[curr_idx + 1] - curr_p) if curr_idx < len(my_picks) - 1 else 0
 else:
     upcoming = [p for p in my_picks if p > curr_p]
     gap = (upcoming[0] - curr_p) if upcoming else 0
@@ -185,95 +188,119 @@ else:
 def simulate_survival(adp, current_pick, target_gap, n_sims=300):
     simulated_picks = np.random.normal(loc=adp, scale=4.0, size=n_sims)
     threshold = current_pick + max(target_gap, 1)
-    survived = np.sum(simulated_picks > threshold)
-    return int(round((survived / n_sims) * 100, 0))
+    return int(round((np.sum(simulated_picks > threshold) / n_sims) * 100, 0))
 
 scored_df['Survival %'] = scored_df['ADP'].apply(lambda x: simulate_survival(x, curr_p, gap))
 
-# 7. SIDEBAR ACTIVE DRAFT CONTROLS (ALWAYS VISIBLE & CLEAN)
+# 7. EXECUTIVE HUD (HEADS-UP DISPLAY)
 curr_round = ((curr_p - 1) // num_teams) + 1
-st.sidebar.markdown("---")
-st.sidebar.subheader(
-    f"Round {curr_round} • Pick #{curr_p} / {TOTAL_PICKS}",
-    help="Current overall pick counter and round number."
-)
+next_picks = [p for p in my_picks if p >= curr_p]
 
-if is_turn:
-    st.sidebar.success(f"🚨 **YOU ARE ON THE CLOCK (SLOT {my_slot})**")
-else:
-    upcoming = [p for p in my_picks if p > curr_p]
-    if upcoming:
-        st.sidebar.info(f"Picks until your turn: **{upcoming[0] - curr_p}** (Pick #{upcoming[0]})")
+h1, h2, h3, h4 = st.columns([1.2, 1.4, 1.6, 1.8])
+
+with h1:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="hud-title">Draft Progress</div>
+        <div class="hud-value">R{curr_round} • P#{curr_p}</div>
+        <div class="hud-sub">{TOTAL_PICKS - curr_p + 1} picks remaining</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with h2:
+    status_text = "🚨 ON THE CLOCK" if is_turn else f"In Queue ({gap} picks away)"
+    status_color = "#ef4444" if is_turn else "#3b82f6"
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="hud-title">Clock Status</div>
+        <div class="hud-value" style="color: {status_color};">{status_text}</div>
+        <div class="hud-sub">Position: Slot {my_slot}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with h3:
+    if len(next_picks) >= 2:
+        flow_text = f"#{next_picks[0]} ➔ #{next_picks[1]}"
+        sub_text = f"Turn Gap: {next_picks[1] - next_picks[0]} picks"
+    elif len(next_picks) == 1:
+        flow_text = f"Final Pick: #{next_picks[0]}"
+        sub_text = "Draft Wrap-Up"
     else:
-        st.sidebar.success("Draft Complete!")
+        flow_text = "Draft Completed"
+        sub_text = "All rounds logged"
 
-with st.sidebar.form("draft_action_form"):
-    selected_player = st.selectbox(
-        "Record Draft Pick:",
-        scored_df['Name'].tolist() if not scored_df.empty else ["Pool Empty"],
-        help="Select or type the player drafted by any team."
-    )
-    mine = st.checkbox(
-        "Drafted to My Team",
-        value=is_turn,
-        help="Check this box if you are drafting this player for your squad."
-    )
-    send_to_ir = st.checkbox(
-        "Direct to IR Slot",
-        value=False,
-        help="Check this if stashing an injured player directly into your IR slot."
-    )
-    btn_submit = st.form_submit_button("Confirm Pick")
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="hud-title">Turn Package Rhythm</div>
+        <div class="hud-value">{flow_text}</div>
+        <div class="hud-sub">{sub_text}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    if btn_submit and not scored_df.empty:
-        match = raw_df[raw_df['Name'] == selected_player]
-        p_pos = match.iloc[0]['Pos'] if not match.empty else "FLEX"
-        p_team = match.iloc[0]['Team'] if not match.empty else ""
+with h4:
+    team_roster_count = len(st.session_state.my_roster)
+    ir_count = len(st.session_state.my_ir)
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="hud-title">Roster Allocation</div>
+        <div class="hud-value">{team_roster_count}/{total_rounds} Active <span style="font-size:0.9rem; color:#9ca3af;">(+{ir_count} IR)</span></div>
+        <div class="hud-sub">{(total_rounds - team_roster_count)} open spots</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-        st.session_state.draft_history.append({
-            'pick': curr_p,
-            'name': selected_player,
-            'pos': p_pos,
-            'team': p_team,
-            'is_mine': mine
-        })
+# 8. IN-LINE DRAFT ACTION CONSOLE
+with st.container():
+    act_col1, act_col2, act_col3, act_col4 = st.columns([3, 1.2, 1.2, 1.4])
+    with act_col1:
+        selected_player = st.selectbox(
+            "Quick Log Draft Pick:",
+            options=scored_df['Name'].tolist() if not scored_df.empty else ["Pool Empty"],
+            label_visibility="collapsed",
+            help="Type to search and log any player drafted."
+        )
+    with act_col2:
+        mine = st.checkbox("Draft to My Team", value=is_turn)
+    with act_col3:
+        send_to_ir = st.checkbox("Send to IR", value=False)
+    with act_col4:
+        if st.button("Confirm Pick ↵", type="primary", use_container_width=True):
+            if not scored_df.empty:
+                match = raw_df[raw_df['Name'] == selected_player]
+                p_pos = match.iloc[0]['Pos'] if not match.empty else "FLEX"
+                p_team = match.iloc[0]['Team'] if not match.empty else ""
 
-        if mine:
-            if send_to_ir and len(st.session_state.my_ir) == 0:
-                st.session_state.my_ir.append(selected_player)
-            else:
-                st.session_state.my_roster.append(selected_player)
-        st.session_state.current_pick += 1
-        st.rerun()
+                st.session_state.draft_history.append({
+                    'pick': curr_p,
+                    'name': selected_player,
+                    'pos': p_pos,
+                    'team': p_team,
+                    'is_mine': mine
+                })
 
-if st.sidebar.button("Reset Draft Board"):
-    st.session_state.draft_history = []
-    st.session_state.my_roster = []
-    st.session_state.my_ir = []
-    st.session_state.current_pick = 1
-    st.rerun()
+                if mine:
+                    if send_to_ir and len(st.session_state.my_ir) == 0:
+                        st.session_state.my_ir.append(selected_player)
+                    else:
+                        st.session_state.my_roster.append(selected_player)
+                st.session_state.current_pick += 1
+                st.rerun()
 
-# 8. MAIN INTERFACE
-st.title(f"Draft War Room — Slot {my_slot} of {num_teams} ({total_rounds} Rounds)")
+st.markdown("---")
 
-c_main, c_team = st.columns([3, 2])
+# 9. DUAL TERMINAL SPLIT: WORKSPACE (LEFT) & LINEUP TRACKER (RIGHT)
+c_board, c_roster = st.columns([3.1, 1.9])
 
-TABLE_COLUMN_CONFIG = {
-    "Name": st.column_config.TextColumn("Player Name", help="NFL player name"),
-    "Pos": st.column_config.TextColumn("Pos", help="Primary fantasy position"),
-    "Team": st.column_config.TextColumn("Team", help="NFL franchise"),
-    "ProjPts": st.column_config.NumberColumn("Proj Pts", help="Projected regular season fantasy points"),
-    "VORP": st.column_config.NumberColumn("VORP", help="Value Over Replacement Player relative to position baseline"),
-    "ADP": st.column_config.NumberColumn("ADP", help="Average Draft Position"),
-    "Survival %": st.column_config.ProgressColumn(
-        "Survival %",
-        help="Simulated probability this player survives until your next pick",
-        format="%d%%",
-        min_value=0,
-        max_value=100
-    ),
-    "Status Badge": st.column_config.TextColumn("Status", help="Health status"),
-    "Notes": st.column_config.TextColumn("Injury Notes", help="Availability and practice notes")
+# Table Formats
+TABLE_CONFIG = {
+    "Name": st.column_config.TextColumn("Player"),
+    "Pos": st.column_config.TextColumn("Pos", width="small"),
+    "Team": st.column_config.TextColumn("NFL", width="small"),
+    "ProjPts": st.column_config.NumberColumn("Proj", format="%.1f"),
+    "VORP": st.column_config.NumberColumn("VORP", format="%.1f"),
+    "ADP": st.column_config.NumberColumn("ADP", format="%.0f"),
+    "Survival %": st.column_config.ProgressColumn("Survival Odds", format="%d%%", min_value=0, max_value=100),
+    "Status Badge": st.column_config.TextColumn("Health", width="small"),
+    "Notes": st.column_config.TextColumn("Report")
 }
 
 def format_status_badge(val):
@@ -286,34 +313,36 @@ def format_status_badge(val):
 display_scored = scored_df.copy()
 display_scored['Status Badge'] = display_scored['Status'].apply(format_status_badge)
 
-with c_main:
-    # AUTO-UPDATING TOP RECOMMENDATIONS BANNER
-    st.subheader(
-        f"🎯 Top {top_n_recommendations} Draft Targets Right Now",
-        help="Automatically updates after each pick. Shows the highest-VORP players available for your roster right now, along with their odds to survive until your next turn."
-    )
-    
-    top_targets = display_scored[~display_scored['Pos'].isin(['K', 'DST'])].sort_values(
+with c_board:
+    # Top Priority Recommendations Card
+    st.markdown(f"##### 🎯 Priority Targets Available Now (Top {top_n})")
+    priority_pool = display_scored[~display_scored['Pos'].isin(['K', 'DST'])].sort_values(
         by=['VORP', 'ADP'], ascending=[False, True]
-    ).head(top_n_recommendations)
+    ).head(top_n)
 
     st.dataframe(
-        top_targets[['Name', 'Pos', 'Team', 'ProjPts', 'VORP', 'ADP', 'Survival %', 'Status Badge']],
+        priority_pool[['Name', 'Pos', 'Team', 'ProjPts', 'VORP', 'ADP', 'Survival %', 'Status Badge']],
         use_container_width=True,
         hide_index=True,
-        column_config=TABLE_COLUMN_CONFIG
+        column_config=TABLE_CONFIG
     )
 
-    st.markdown("---")
-
+    # Positional & Board Views
     tab_board, tab_all, tab_rb, tab_wr, tab_te, tab_qb, tab_dst_k, tab_injury = st.tabs(
-        ["📋 Draft Board", "🔥 Best VORP", "🏃 Running Backs", "🙌 Wide Receivers", "🧱 Tight Ends", "🎯 Quarterbacks", "🛡️ D/ST & K", "🏥 Injury Hub"]
+        ["📋 Visual Grid", "🔥 All VORP", "🏃 RB", "🙌 WR", "🧱 TE", "🎯 QB", "🛡️ D/ST & K", "🏥 IR Hub"]
     )
+
+    def render_pos_table(df_sub):
+        st.dataframe(
+            df_sub[['Name', 'Pos', 'Team', 'ProjPts', 'VORP', 'ADP', 'Survival %', 'Status Badge', 'Notes']]
+            .sort_values(by=['VORP', 'ADP'], ascending=[False, True]),
+            use_container_width=True,
+            hide_index=True,
+            column_config=TABLE_CONFIG
+        )
 
     with tab_board:
-        st.caption(f"Live {num_teams}-Team × {total_rounds}-Round Snake Board. Slot {my_slot} is highlighted.")
         grid_data = {f"Team {i+1}": ["—"] * total_rounds for i in range(num_teams)}
-        
         for item in st.session_state.draft_history:
             p_num = item['pick']
             r_idx = (p_num - 1) // num_teams
@@ -322,102 +351,115 @@ with c_main:
             col_name = f"Team {col_idx + 1}"
             grid_data[col_name][r_idx] = f"{item['name']} ({item['pos']})"
 
-        board_df = pd.DataFrame(grid_data, index=[f"Round {r+1}" for r in range(total_rounds)])
+        board_df = pd.DataFrame(grid_data, index=[f"R{r+1}" for r in range(total_rounds)])
 
         def style_draft_grid(val):
             if "—" in val:
-                return "color: #555; background-color: #111;"
+                return "color: #4b5563; background-color: #0f172a;"
             if "(RB)" in val:
-                return "background-color: #1e3a5f; color: #a5d8ff; font-weight: bold;"
+                return "background-color: #1e3a8a; color: #bfdbfe; font-weight: 600;"
             if "(WR)" in val:
-                return "background-color: #1a4329; color: #b2f2bb; font-weight: bold;"
+                return "background-color: #064e3b; color: #a7f3d0; font-weight: 600;"
             if "(QB)" in val:
-                return "background-color: #5c2c16; color: #ffc9c9; font-weight: bold;"
+                return "background-color: #7c2d12; color: #fed7aa; font-weight: 600;"
             if "(TE)" in val:
-                return "background-color: #4f3a12; color: #ffec99; font-weight: bold;"
-            return "background-color: #2b2b2b; color: #fff;"
+                return "background-color: #713f12; color: #fef08a; font-weight: 600;"
+            return "background-color: #374151; color: #f3f4f6;"
 
         try:
             styled_board = board_df.style.map(style_draft_grid)
         except AttributeError:
             styled_board = board_df.style.applymap(style_draft_grid)
 
-        st.dataframe(styled_board, use_container_width=True, height=450)
-
-    def render_position_table(df_subset):
-        st.dataframe(
-            df_subset[['Name', 'Pos', 'Team', 'ProjPts', 'VORP', 'ADP', 'Survival %', 'Status Badge', 'Notes']]
-            .sort_values(by=['VORP', 'ADP'], ascending=[False, True]),
-            use_container_width=True,
-            hide_index=True,
-            column_config=TABLE_COLUMN_CONFIG
-        )
+        st.dataframe(styled_board, use_container_width=True, height=460)
 
     with tab_all:
-        render_position_table(display_scored[~display_scored['Pos'].isin(['K', 'DST'])])
+        render_pos_table(display_scored[~display_scored['Pos'].isin(['K', 'DST'])])
     with tab_rb:
-        render_position_table(display_scored[display_scored['Pos'] == 'RB'])
+        render_pos_table(display_scored[display_scored['Pos'] == 'RB'])
     with tab_wr:
-        render_position_table(display_scored[display_scored['Pos'] == 'WR'])
+        render_pos_table(display_scored[display_scored['Pos'] == 'WR'])
     with tab_te:
-        render_position_table(display_scored[display_scored['Pos'] == 'TE'])
+        render_pos_table(display_scored[display_scored['Pos'] == 'TE'])
     with tab_qb:
-        render_position_table(display_scored[display_scored['Pos'] == 'QB'])
+        render_pos_table(display_scored[display_scored['Pos'] == 'QB'])
     with tab_dst_k:
-        render_position_table(display_scored[display_scored['Pos'].isin(['DST', 'K'])])
+        render_pos_table(display_scored[display_scored['Pos'].isin(['DST', 'K'])])
     with tab_injury:
         injured_only = display_scored[display_scored['Status'] != 'Healthy']
-        st.caption("Target late-round injured players here to draft directly into your IR spot.")
         st.dataframe(
             injured_only[['Name', 'Pos', 'Team', 'ADP', 'Status', 'Notes']].sort_values(by='ADP'),
             use_container_width=True,
             hide_index=True,
-            column_config={
-                "Name": st.column_config.TextColumn("Player Name", help="NFL player name"),
-                "Pos": st.column_config.TextColumn("Pos", help="Eligible position"),
-                "Team": st.column_config.TextColumn("Team", help="NFL team"),
-                "ADP": st.column_config.NumberColumn("ADP", help="Average draft position discount"),
-                "Status": st.column_config.TextColumn("Status", help="Current official designation"),
-                "Notes": st.column_config.TextColumn("Injury Notes", help="Doctor reports and return timeline")
-            }
+            column_config=TABLE_CONFIG
         )
 
-with c_team:
-    st.subheader(
-        f"My Team ({len(st.session_state.my_roster)}/{total_rounds} Active + {len(st.session_state.my_ir)}/1 IR)",
-        help="Tracks your drafted squad."
-    )
+with c_roster:
+    st.markdown("##### 🛡️ Lineup Depth Chart")
     
-    if st.session_state.my_roster:
-        team_df = raw_df[raw_df['Name'].isin(st.session_state.my_roster)]
-        st.dataframe(
-            team_df[['Name', 'Pos', 'Team', 'ProjPts', 'Status']],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Name": st.column_config.TextColumn("Player Name"),
-                "Pos": st.column_config.TextColumn("Pos"),
-                "Team": st.column_config.TextColumn("Team"),
-                "ProjPts": st.column_config.NumberColumn("Proj Pts", help="Season projected fantasy points"),
-                "Status": st.column_config.TextColumn("Status", help="Current availability status")
-            }
-        )
-        st.metric("Total Projected Starter Output", f"{team_df['ProjPts'].sum():.1f} pts")
+    # Formatted Roster Construction
+    roster_pool = raw_df[raw_df['Name'].isin(st.session_state.my_roster)].copy()
+    
+    def get_slot_assignment(pos, taken_slots):
+        return [p for p in roster_pool[roster_pool['Pos'] == pos]['Name'].tolist() if p not in taken_slots]
+
+    taken = []
+    qb = (get_slot_assignment('QB', taken) + ["—"])[0]
+    taken.append(qb)
+    
+    rbs = get_slot_assignment('RB', taken)
+    rb1 = rbs[0] if len(rbs) > 0 else "—"
+    rb2 = rbs[1] if len(rbs) > 1 else "—"
+    taken.extend([rb1, rb2])
+    
+    wrs = get_slot_assignment('WR', taken)
+    wr1 = wrs[0] if len(wrs) > 0 else "—"
+    wr2 = wrs[1] if len(wrs) > 1 else "—"
+    taken.extend([wr1, wr2])
+    
+    te = (get_slot_assignment('TE', taken) + ["—"])[0]
+    taken.append(te)
+    
+    # Flex: Remaining RB/WR/TE
+    flex_candidates = [p for p in roster_pool[roster_pool['Pos'].isin(['RB', 'WR', 'TE'])]['Name'].tolist() if p not in taken and p != "—"]
+    flex = flex_candidates[0] if flex_candidates else "—"
+    taken.append(flex)
+    
+    dst = (get_slot_assignment('DST', taken) + ["—"])[0]
+    taken.append(dst)
+    
+    k = (get_slot_assignment('K', taken) + ["—"])[0]
+    taken.append(k)
+    
+    bench = [p for p in roster_pool['Name'].tolist() if p not in taken and p != "—"]
+    
+    starter_df = pd.DataFrame([
+        {"Slot": "QB", "Player": qb},
+        {"Slot": "RB1", "Player": rb1},
+        {"Slot": "RB2", "Player": rb2},
+        {"Slot": "WR1", "Player": wr1},
+        {"Slot": "WR2", "Player": wr2},
+        {"Slot": "TE", "Player": te},
+        {"Slot": "FLEX", "Player": flex},
+        {"Slot": "D/ST", "Player": dst},
+        {"Slot": "K", "Player": k},
+    ])
+
+    st.dataframe(starter_df, use_container_width=True, hide_index=True)
+
+    if bench:
+        st.caption(f"**Bench ({len(bench)}):** " + ", ".join(bench))
     else:
-        st.info("No active selections yet.")
+        st.caption("**Bench:** No reserves yet.")
 
     if st.session_state.my_ir:
-        st.markdown("#### 🏥 IR Slot")
-        ir_df = raw_df[raw_df['Name'].isin(st.session_state.my_ir)]
-        st.dataframe(ir_df[['Name', 'Pos', 'Team', 'Status', 'Notes']], use_container_width=True, hide_index=True)
+        st.markdown(f"🏥 **IR Slot:** {', '.join(st.session_state.my_ir)}")
 
     st.markdown("---")
-    st.subheader(
-        "Tier Scarcity Monitor",
-        help="Shows the point drop-off across the top 3 available players at each position."
-    )
-    for p in ['RB', 'WR', 'TE', 'QB']:
+    st.markdown("##### ⚡ Tier Scarcity Cliff")
+    cliff_cols = st.columns(4)
+    for i, p in enumerate(['RB', 'WR', 'TE', 'QB']):
         top_tier = scored_df[scored_df['Pos'] == p].head(3)
-        if len(top_tier) >= 2:
-            drop = top_tier.iloc[0]['VORP'] - top_tier.iloc[-1]['VORP']
-            st.caption(f"**{p} Scarcity Cliff:** -{drop:.1f} VORP across top 3 available")
+        cliff_val = (top_tier.iloc[0]['VORP'] - top_tier.iloc[-1]['VORP']) if len(top_tier) >= 2 else 0.0
+        with cliff_cols[i]:
+            st.metric(label=f"{p} Cliff", value=f"-{cliff_val:.1f}")
