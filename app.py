@@ -80,6 +80,13 @@ if 'practice_mode' not in st.session_state:
 if 'auto_advance' not in st.session_state:
     st.session_state.auto_advance = True
 
+def reset_entire_board():
+    st.session_state.draft_history = []
+    st.session_state.my_roster = []
+    st.session_state.my_ir = []
+    st.session_state.current_pick = 1
+    st.rerun()
+
 # 3. ACTIVE NFL FRANCHISES LIST
 NFL_TEAMS = {
     'ARI', 'ATL', 'BAL', 'BUF', 'CAR', 'CHI', 'CIN', 'CLE', 'DAL', 'DEN',
@@ -173,13 +180,6 @@ with st.sidebar.expander("📂 Data Feeds & Backup", expanded=False):
     
     if st.button("🔄 Sync Fresh NFL Wire Data", help="Clears cache and forces an immediate reload of player depth charts and injury wires."):
         fetch_player_pool.clear()
-        st.rerun()
-
-    if st.button("Reset Entire Draft Board", type="secondary"):
-        st.session_state.draft_history = []
-        st.session_state.my_roster = []
-        st.session_state.my_ir = []
-        st.session_state.current_pick = 1
         st.rerun()
 
 TOTAL_PICKS = num_teams * total_rounds
@@ -314,24 +314,29 @@ def execute_pick(player_name, is_my_pick, stash_to_ir=False):
     st.rerun()
 
 # 9. EXECUTIVE HUD
-curr_round = ((curr_p - 1) // num_teams) + 1
+curr_round = min(((curr_p - 1) // num_teams) + 1, total_rounds)
 next_picks = [p for p in my_picks if p >= curr_p]
 
 h1, h2, h3, h4 = st.columns([1.2, 1.4, 1.6, 1.8])
 
 with h1:
     mode_label = "🎮 PRACTICE (AUTO-ADV)" if (st.session_state.practice_mode and st.session_state.auto_advance) else ("🎮 PRACTICE" if st.session_state.practice_mode else "LIVE WAR ROOM")
+    remaining_picks = max(0, TOTAL_PICKS - curr_p + 1)
     st.markdown(f"""
     <div class="metric-card">
         <div class="hud-title">{mode_label}</div>
-        <div class="hud-value">R{curr_round} • P#{curr_p}</div>
-        <div class="hud-sub">{TOTAL_PICKS - curr_p + 1} picks remaining</div>
+        <div class="hud-value">R{curr_round} • P#{min(curr_p, TOTAL_PICKS)}</div>
+        <div class="hud-sub">{remaining_picks} picks remaining</div>
     </div>
     """, unsafe_allow_html=True)
 
 with h2:
-    status_text = "🚨 ON THE CLOCK" if is_turn else f"In Queue ({gap} picks away)"
-    status_color = "#ef4444" if is_turn else "#3b82f6"
+    if curr_p > TOTAL_PICKS:
+        status_text = "🏁 DRAFT COMPLETED"
+        status_color = "#10b981"
+    else:
+        status_text = "🚨 ON THE CLOCK" if is_turn else f"In Queue ({gap} picks away)"
+        status_color = "#ef4444" if is_turn else "#3b82f6"
     st.markdown(f"""
     <div class="metric-card">
         <div class="hud-title">Clock Status</div>
@@ -521,49 +526,58 @@ clock_html = f"""
 """
 components.html(clock_html, height=72)
 
-# 11. IN-LINE ACTION CONSOLE
-with st.container():
-    act_col1, act_col2, act_col3, act_col4, act_col5 = st.columns([2.8, 1.1, 1.0, 1.3, 0.9])
-    with act_col1:
-        selected_player = st.selectbox(
-            "Quick Log Draft Pick:",
-            options=scored_df['Name'].tolist() if not scored_df.empty else ["Pool Empty"],
-            label_visibility="collapsed",
-            help="Search and log any drafted player."
-        )
-    with act_col2:
-        mine = st.checkbox("Draft to My Team", value=is_turn)
-    with act_col3:
-        send_to_ir = st.checkbox("Send to IR", value=False)
-    with act_col4:
-        if st.button("Confirm Pick ↵", type="primary", use_container_width=True):
-            if not scored_df.empty:
-                execute_pick(selected_player, mine, send_to_ir)
+# 11. IN-LINE ACTION CONSOLE + PROMINENT RESET CONTROLS
+if curr_p > TOTAL_PICKS:
+    st.success("🎉 **DRAFT COMPLETE! All rounds have concluded.**")
+    if st.button("🚀 Start New Draft / Reset Board", type="primary", use_container_width=True):
+        reset_entire_board()
+else:
+    with st.container():
+        act_col1, act_col2, act_col3, act_col4, act_col5, act_col6 = st.columns([2.6, 1.0, 0.9, 1.2, 0.8, 0.8])
+        with act_col1:
+            selected_player = st.selectbox(
+                "Quick Log Draft Pick:",
+                options=scored_df['Name'].tolist() if not scored_df.empty else ["Pool Empty"],
+                label_visibility="collapsed",
+                help="Search and log any drafted player."
+            )
+        with act_col2:
+            mine = st.checkbox("Draft to My Team", value=is_turn)
+        with act_col3:
+            send_to_ir = st.checkbox("Send to IR", value=False)
+        with act_col4:
+            if st.button("Confirm Pick ↵", type="primary", use_container_width=True):
+                if not scored_df.empty:
+                    execute_pick(selected_player, mine, send_to_ir)
 
-    with act_col5:
-        if st.button("↩ Undo", help="Revert the last pick logged", use_container_width=True):
-            if st.session_state.draft_history:
-                if st.session_state.practice_mode and st.session_state.auto_advance:
-                    while st.session_state.draft_history:
-                        last = st.session_state.draft_history.pop()
-                        st.session_state.current_pick = max(1, st.session_state.current_pick - 1)
-                        if last['is_mine']:
-                            p_name = last['name']
-                            if last['is_ir'] and p_name in st.session_state.my_ir:
+        with act_col5:
+            if st.button("↩ Undo", help="Revert the last pick logged", use_container_width=True):
+                if st.session_state.draft_history:
+                    if st.session_state.practice_mode and st.session_state.auto_advance:
+                        while st.session_state.draft_history:
+                            last = st.session_state.draft_history.pop()
+                            st.session_state.current_pick = max(1, st.session_state.current_pick - 1)
+                            if last['is_mine']:
+                                p_name = last['name']
+                                if last['is_ir'] and p_name in st.session_state.my_ir:
+                                    st.session_state.my_ir.remove(p_name)
+                                elif p_name in st.session_state.my_roster:
+                                    st.session_state.my_roster.remove(p_name)
+                                break
+                    else:
+                        last_pick = st.session_state.draft_history.pop()
+                        p_name = last_pick['name']
+                        if last_pick['is_mine']:
+                            if last_pick['is_ir'] and p_name in st.session_state.my_ir:
                                 st.session_state.my_ir.remove(p_name)
                             elif p_name in st.session_state.my_roster:
                                 st.session_state.my_roster.remove(p_name)
-                            break
-                else:
-                    last_pick = st.session_state.draft_history.pop()
-                    p_name = last_pick['name']
-                    if last_pick['is_mine']:
-                        if last_pick['is_ir'] and p_name in st.session_state.my_ir:
-                            st.session_state.my_ir.remove(p_name)
-                        elif p_name in st.session_state.my_roster:
-                            st.session_state.my_roster.remove(p_name)
-                    st.session_state.current_pick = max(1, st.session_state.current_pick - 1)
-                st.rerun()
+                        st.session_state.current_pick = max(1, st.session_state.current_pick - 1)
+                    st.rerun()
+
+        with act_col6:
+            if st.button("🔄 Reset", help="Reset all picks and rosters back to Pick #1", use_container_width=True):
+                reset_entire_board()
 
 st.markdown("---")
 
@@ -810,7 +824,6 @@ with c_roster:
         }
     )
 
-    # EXPANDED BENCH SECTION (ROW-BY-ROW POSITIONAL BREAKDOWN)
     st.markdown(f"###### 🪑 Bench ({len(bench_names)} Reserves)")
     if bench_names:
         bench_df = roster_pool[roster_pool['Name'].isin(bench_names)][['Name', 'Pos', 'Team', 'ProjPts', 'Status']].copy()
@@ -842,7 +855,7 @@ with c_roster:
                 "Name": st.column_config.TextColumn("Player"),
                 "Pos": st.column_config.TextColumn("Pos", width="small"),
                 "Team": st.column_config.TextColumn("NFL", width="small"),
-                "Status": st.column_config.TextColumn("Status", width="small"),
+                "Status": st.column_config.TextColumn("Health", width="small"),
                 "Notes": st.column_config.TextColumn("Report")
             }
         )
