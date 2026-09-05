@@ -133,7 +133,6 @@ st.markdown("""
     .badge-te { background-color: #d97706; color: #ffffff; }
     .badge-other { background-color: #475569; color: #ffffff; }
 
-    /* CSS-driven Mobile Responsiveness */
     @media (max-width: 768px) {
         .block-container {
             padding-top: 0.5rem !important;
@@ -204,63 +203,85 @@ NFL_TEAMS = {
     'MIN', 'NE', 'NO', 'NYG', 'NYJ', 'PHI', 'PIT', 'SF', 'SEA', 'TB', 'TEN', 'WAS'
 }
 
-# 4. ROBUST DATA ENGINE (15-Min TTL + Granular Injury Mapping)
+# 4. ROBUST DATA ENGINE (30s Timeout + Resilient Fallback Pool)
 @st.cache_data(ttl=900)
 def fetch_player_pool():
     try:
         url = "https://api.sleeper.app/v1/players/nfl"
-        res = requests.get(url, timeout=12).json()
-        pool = []
-        for p_id, p in res.items():
-            pos = 'DST' if p.get('position') == 'DEF' else p.get('position')
-            team = p.get('team')
-            rank = p.get('search_rank')
-            is_active = p.get("active", False)
+        res = requests.get(url, timeout=30)
+        if res.status_code == 200:
+            raw_json = res.json()
+            pool = []
+            for p_id, p in raw_json.items():
+                pos = 'DST' if p.get('position') == 'DEF' else p.get('position')
+                team = p.get('team')
+                rank = p.get('search_rank')
+                is_active = p.get("active", False)
 
-            if is_active and pos in ['QB', 'RB', 'WR', 'TE', 'DST', 'K'] and team in NFL_TEAMS and rank is not None and rank > 0:
-                rank = float(rank)
-                
-                if pos == 'QB':
-                    proj = max(380.0 - (rank * 1.8), 120.0)
-                elif pos in ['RB', 'WR']:
-                    proj = max(295.0 - (rank * 1.3), 35.0)
-                elif pos == 'TE':
-                    proj = max(215.0 - (rank * 1.4), 25.0)
-                elif pos == 'K':
-                    proj = max(135.0 - (rank * 0.15), 90.0)
-                else:
-                    proj = max(125.0 - (rank * 0.15), 75.0)
-                
-                inj_status = p.get("injury_status") or "Healthy"
-                inj_body = p.get("injury_body_part")
-                inj_notes = p.get("injury_notes") or p.get("news_updated") or "Active"
-                detailed_notes = f"{inj_body}: {inj_notes}" if inj_body else inj_notes
+                # Filter strictly for active NFL franchises & standard skill positions
+                if is_active and pos in ['QB', 'RB', 'WR', 'TE', 'DST', 'K'] and team in NFL_TEAMS:
+                    calc_rank = float(rank) if (rank is not None and rank > 0) else 450.0
+                    
+                    if pos == 'QB':
+                        proj = max(385.0 - (calc_rank * 1.8), 120.0)
+                    elif pos in ['RB', 'WR']:
+                        proj = max(295.0 - (calc_rank * 1.3), 35.0)
+                    elif pos == 'TE':
+                        proj = max(215.0 - (calc_rank * 1.4), 25.0)
+                    elif pos == 'K':
+                        proj = max(135.0 - (calc_rank * 0.15), 90.0)
+                    else:
+                        proj = max(125.0 - (calc_rank * 0.15), 75.0)
+                    
+                    inj_status = p.get("injury_status") or "Healthy"
+                    inj_body = p.get("injury_body_part")
+                    inj_notes = p.get("injury_notes") or p.get("news_updated") or "Active"
+                    detailed_notes = f"{inj_body}: {inj_notes}" if inj_body else inj_notes
 
-                pool.append({
-                    "Name": p.get("full_name") or f"{p.get('first_name')} {p.get('last_name')}",
-                    "Pos": pos,
-                    "Team": team,
-                    "ADP": rank,
-                    "ProjPts": round(proj, 1),
-                    "Status": inj_status,
-                    "Notes": detailed_notes
-                })
-        df = pd.DataFrame(pool).sort_values(by="ADP").reset_index(drop=True)
-        return df
+                    pool.append({
+                        "Name": p.get("full_name") or f"{p.get('first_name')} {p.get('last_name')}",
+                        "Pos": pos,
+                        "Team": team,
+                        "ADP": calc_rank,
+                        "ProjPts": round(proj, 1),
+                        "Status": inj_status,
+                        "Notes": detailed_notes
+                    })
+            if pool:
+                df = pd.DataFrame(pool).sort_values(by="ADP").reset_index(drop=True)
+                return df
     except Exception:
-        data = [
-            {"Name": "Jahmyr Gibbs", "Pos": "RB", "Team": "DET", "ADP": 1.0, "ProjPts": 330.0, "Status": "Healthy", "Notes": "Active"},
-            {"Name": "Bijan Robinson", "Pos": "RB", "Team": "ATL", "ADP": 2.0, "ProjPts": 314.0, "Status": "Healthy", "Notes": "Active"},
-            {"Name": "Ja'Marr Chase", "Pos": "WR", "Team": "CIN", "ADP": 3.0, "ProjPts": 277.0, "Status": "Healthy", "Notes": "Active"},
-            {"Name": "Puka Nacua", "Pos": "WR", "Team": "LAR", "ADP": 4.0, "ProjPts": 275.0, "Status": "Healthy", "Notes": "Active"},
-            {"Name": "Jonathan Taylor", "Pos": "RB", "Team": "IND", "ADP": 6.0, "ProjPts": 265.0, "Status": "Healthy", "Notes": "Active"},
-            {"Name": "Amon-Ra St. Brown", "Pos": "WR", "Team": "DET", "ADP": 8.0, "ProjPts": 270.0, "Status": "Healthy", "Notes": "Active"},
-            {"Name": "A.J. Brown", "Pos": "WR", "Team": "PHI", "ADP": 10.0, "ProjPts": 255.0, "Status": "Healthy", "Notes": "Active"},
-            {"Name": "Saquon Barkley", "Pos": "RB", "Team": "PHI", "ADP": 11.0, "ProjPts": 256.0, "Status": "Healthy", "Notes": "Active"},
-            {"Name": "Brock Bowers", "Pos": "TE", "Team": "LV", "ADP": 20.0, "ProjPts": 210.0, "Status": "Healthy", "Notes": "Active"},
-            {"Name": "Josh Allen", "Pos": "QB", "Team": "BUF", "ADP": 22.0, "ProjPts": 375.0, "Status": "Healthy", "Notes": "Active"},
-        ]
-        return pd.DataFrame(data)
+        pass
+
+    # Extended Offline Fallback (Guarantees War Room never opens empty)
+    fallback_roster = [
+        {"Name": "Bijan Robinson", "Pos": "RB", "Team": "ATL", "ADP": 1.0, "ProjPts": 320.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Jahmyr Gibbs", "Pos": "RB", "Team": "DET", "ADP": 2.0, "ProjPts": 315.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Ja'Marr Chase", "Pos": "WR", "Team": "CIN", "ADP": 3.0, "ProjPts": 285.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Puka Nacua", "Pos": "WR", "Team": "LAR", "ADP": 4.0, "ProjPts": 280.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "CeeDee Lamb", "Pos": "WR", "Team": "DAL", "ADP": 5.0, "ProjPts": 278.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Justin Jefferson", "Pos": "WR", "Team": "MIN", "ADP": 6.0, "ProjPts": 275.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Jonathan Taylor", "Pos": "RB", "Team": "IND", "ADP": 7.0, "ProjPts": 270.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Amon-Ra St. Brown", "Pos": "WR", "Team": "DET", "ADP": 8.0, "ProjPts": 268.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Saquon Barkley", "Pos": "RB", "Team": "PHI", "ADP": 9.0, "ProjPts": 265.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "A.J. Brown", "Pos": "WR", "Team": "PHI", "ADP": 10.0, "ProjPts": 260.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Garrett Wilson", "Pos": "WR", "Team": "NYJ", "ADP": 11.0, "ProjPts": 252.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Derrick Henry", "Pos": "RB", "Team": "BAL", "ADP": 12.0, "ProjPts": 250.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Kyren Williams", "Pos": "RB", "Team": "LAR", "ADP": 13.0, "ProjPts": 248.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Brock Bowers", "Pos": "TE", "Team": "LV", "ADP": 18.0, "ProjPts": 215.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Trey McBride", "Pos": "TE", "Team": "ARI", "ADP": 20.0, "ProjPts": 208.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Josh Allen", "Pos": "QB", "Team": "BUF", "ADP": 22.0, "ProjPts": 380.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Lamar Jackson", "Pos": "QB", "Team": "BAL", "ADP": 24.0, "ProjPts": 372.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Jalen Hurts", "Pos": "QB", "Team": "PHI", "ADP": 26.0, "ProjPts": 365.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Breece Hall", "Pos": "RB", "Team": "NYJ", "ADP": 28.0, "ProjPts": 242.0, "Status": "Questionable", "Notes": "Active"},
+        {"Name": "De'Von Achane", "Pos": "RB", "Team": "MIA", "ADP": 30.0, "ProjPts": 238.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Drake London", "Pos": "WR", "Team": "ATL", "ADP": 32.0, "ProjPts": 232.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Nico Collins", "Pos": "WR", "Team": "HOU", "ADP": 34.0, "ProjPts": 230.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Jaylen Waddle", "Pos": "WR", "Team": "MIA", "ADP": 36.0, "ProjPts": 225.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "Sam LaPorta", "Pos": "TE", "Team": "DET", "ADP": 38.0, "ProjPts": 195.0, "Status": "Healthy", "Notes": "Active"},
+        {"Name": "George Kittle", "Pos": "TE", "Team": "SF", "ADP": 42.0, "ProjPts": 190.0, "Status": "Healthy", "Notes": "Active"},
+    ]
+    return pd.DataFrame(fallback_roster)
 
 # 5. SIDEBAR CONFIGURATION
 with st.sidebar.expander("⏱️ Draft Clock & Audio Settings", expanded=False):
@@ -425,7 +446,7 @@ def execute_pick(player_name, is_my_pick, stash_to_ir=False):
             simulate_bot_picks(TOTAL_PICKS + 1)
     st.rerun()
 
-# 9. EXECUTIVE HUD (FIXED: Exactly 4 columns without dynamic unpacking)
+# 9. EXECUTIVE HUD
 curr_round = min(((curr_p - 1) // num_teams) + 1, total_rounds)
 next_picks = [p for p in my_picks if p >= curr_p]
 
@@ -487,7 +508,7 @@ with h4:
     </div>
     """, unsafe_allow_html=True)
 
-# 10. DRAFT COUNTDOWN CLOCK COMPONENT (AUTO-RESET ON PICK)
+# 10. DRAFT COUNTDOWN CLOCK COMPONENT
 clock_html = f"""
 <div id="clock-container" data-pick="{curr_p}" style="
     background: var(--war-bg-card, #ffffff);
