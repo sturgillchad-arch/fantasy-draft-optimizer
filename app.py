@@ -275,6 +275,13 @@ with st.sidebar.expander("📂 Data Feeds & Backup", expanded=False):
 
 TOTAL_PICKS = num_teams * total_rounds
 
+# Snake calculation function
+def get_team_for_pick(pick_num, teams):
+    r_idx = (pick_num - 1) // teams
+    p_in_r = (pick_num - 1) % teams
+    col_idx = p_in_r if (r_idx % 2 == 0) else (teams - 1 - p_in_r)
+    return col_idx + 1
+
 def generate_my_picks(slot, teams, rounds):
     picks = []
     for r in range(rounds):
@@ -305,13 +312,15 @@ def simulate_bot_picks(target_pick):
             
         pool['sim_val'] = pool['ADP'] + np.random.normal(0, curr_scale, size=len(pool))
         bot_choice = pool.sort_values(by='sim_val').iloc[0]
+        bot_team_num = get_team_for_pick(p_idx, num_teams)
         
         st.session_state.draft_history.append({
             'pick': p_idx,
+            'team_slot': bot_team_num,
             'name': bot_choice['Name'],
             'pos': bot_choice['Pos'],
             'team': bot_choice['Team'],
-            'is_mine': False,
+            'is_mine': (bot_team_num == my_slot),
             'is_ir': False
         })
         st.session_state.current_pick += 1
@@ -349,6 +358,7 @@ scored_df = calculate_dynamic_vorp(available_df, st.session_state.my_roster)
 # 8. TURN CADENCE & SIMULATION
 curr_p = st.session_state.current_pick
 is_turn = curr_p in my_picks
+curr_on_clock_team = get_team_for_pick(curr_p, num_teams) if curr_p <= TOTAL_PICKS else my_slot
 
 if is_turn:
     curr_idx = my_picks.index(curr_p)
@@ -373,13 +383,15 @@ def strategy_tag(row):
 
 scored_df['Action'] = scored_df.apply(strategy_tag, axis=1)
 
-def execute_pick(player_name, is_my_pick, stash_to_ir=False):
+def execute_pick(player_name, assigned_team_num, stash_to_ir=False):
     match = raw_df[raw_df['Name'] == player_name]
     p_pos = match.iloc[0]['Pos'] if not match.empty else "FLEX"
     p_team = match.iloc[0]['Team'] if not match.empty else ""
+    is_my_pick = (assigned_team_num == my_slot)
 
     st.session_state.draft_history.append({
         'pick': st.session_state.current_pick,
+        'team_slot': assigned_team_num,
         'name': player_name,
         'pos': p_pos,
         'team': p_team,
@@ -425,13 +437,13 @@ with h2:
         status_text = "🏁 COMPLETED"
         status_color = "#047857"
     else:
-        status_text = "🚨 ON CLOCK" if is_turn else f"In Queue ({gap} away)"
+        status_text = f"🚨 YOUR TURN (Slot {my_slot})" if is_turn else f"Team {curr_on_clock_team} Clock ({gap} away)"
         status_color = "#b91c1c" if is_turn else "#1d4ed8"
     st.markdown(f"""
     <div class="metric-card">
         <div class="hud-title">Clock Status</div>
         <div class="hud-value" style="color: {status_color};">{status_text}</div>
-        <div class="hud-sub">Position: Slot {my_slot}</div>
+        <div class="hud-sub">Your Position: Slot {my_slot}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -481,7 +493,7 @@ clock_html = f"""
 ">
     <div style="display: flex; align-items: center; gap: 10px;">
         <span style="font-size: 0.8rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: {'#b91c1c' if is_turn else '#1e293b'};">
-            {'🚨 ON CLOCK' if is_turn else '⏱️ TIMER'}
+            {'🚨 ON CLOCK' if is_turn else f'⏱️ TEAM {curr_on_clock_team} CLOCK'}
         </span>
         <div id="timer-display" style="
             font-size: 1.45rem;
@@ -621,29 +633,45 @@ clock_html = f"""
 """
 components.html(clock_html, height=66)
 
-# 11. IN-LINE ACTION CONSOLE + RESET CONTROLS
+# 11. IN-LINE ACTION CONSOLE WITH DIRECT TEAM ASSIGNMENT
 if curr_p > TOTAL_PICKS:
     st.success("🎉 **DRAFT COMPLETE! All rounds have concluded.**")
     if st.button("🚀 Start New Draft / Reset Board", type="primary", use_container_width=True):
         reset_entire_board()
 else:
     with st.container():
-        act_col1, act_col2, act_col3, act_col4, act_col5, act_col6 = st.columns([2.6, 1.0, 0.9, 1.2, 0.8, 0.8])
+        # Team selector options
+        team_options = [f"Team {i}" for i in range(1, num_teams + 1)]
+        default_team_idx = (curr_on_clock_team - 1) if (1 <= curr_on_clock_team <= num_teams) else 0
+
+        act_col1, act_col2, act_col3, act_col4, act_col5, act_col6 = st.columns([2.6, 1.3, 0.8, 1.2, 0.8, 0.8])
+        
         with act_col1:
             selected_player = st.selectbox(
                 "Quick Log Draft Pick:",
                 options=scored_df['Name'].tolist() if not scored_df.empty else ["Pool Empty"],
                 label_visibility="collapsed",
-                help="Search and log any drafted player."
+                help="Search and select drafted player."
             )
+        
         with act_col2:
-            mine = st.checkbox("Draft to My Team", value=is_turn)
+            assigned_team_str = st.selectbox(
+                "Assign To:",
+                options=team_options,
+                index=default_team_idx,
+                label_visibility="collapsed",
+                help="Team currently on the clock. You can override if a pick was traded."
+            )
+            selected_team_num = int(assigned_team_str.split(" ")[1])
+        
         with act_col3:
-            send_to_ir = st.checkbox("Send to IR", value=False)
+            send_to_ir = st.checkbox("IR Stash", value=False, disabled=(selected_team_num != my_slot), help="Stash to your IR slot (only applicable when drafting to your team).")
+        
         with act_col4:
-            if st.button("Confirm Pick ↵", type="primary", use_container_width=True):
+            btn_label = f"Confirm #{curr_p} ↵"
+            if st.button(btn_label, type="primary", use_container_width=True):
                 if not scored_df.empty:
-                    execute_pick(selected_player, mine, send_to_ir)
+                    execute_pick(selected_player, selected_team_num, send_to_ir)
 
         with act_col5:
             if st.button("↩ Undo", help="Revert the last pick logged", use_container_width=True):
@@ -807,12 +835,13 @@ with c_board:
             )
 
             with c_btn:
+                # In Live mode, Draft button assigns to whichever team is on the clock (or user if it's user turn)
+                button_target_team = my_slot if is_turn else curr_on_clock_team
                 if st.button("Draft", key=f"btn_prio_draft_{row['Name']}_{idx}", type="secondary", use_container_width=True):
-                    execute_pick(row['Name'], is_my_pick=True)
+                    execute_pick(row['Name'], button_target_team)
 
             with c_name:
                 health_icon = "🚨 " if row['Status'] in ["IR", "Out", "Suspended"] else ("⚠️ " if row['Status'] in ["Questionable", "Doubtful", "PUP"] else "")
-                # Direct, hardcoded bold black style that overrides Streamlit light mode defaults
                 st.markdown(
                     f"<div style='font-size:0.95rem; font-weight:900; color:#000000 !important; padding-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>"
                     f"{health_icon}{row['Name']}"
@@ -971,11 +1000,19 @@ with tab_board:
     grid_data = {f"Team {i+1}": ["—"] * total_rounds for i in range(num_teams)}
     for item in st.session_state.draft_history:
         p_num = item['pick']
+        t_slot = item.get('team_slot')
         r_idx = (p_num - 1) // num_teams
-        p_in_round = (p_num - 1) % num_teams
-        col_idx = p_in_round if (r_idx % 2 == 0) else (num_teams - 1 - p_in_round)
-        col_name = f"Team {col_idx + 1}"
-        grid_data[col_name][r_idx] = f"{item['name']} ({item['pos']})"
+        
+        # If team_slot was recorded explicitly use it, else follow standard snake index
+        if t_slot:
+            col_name = f"Team {t_slot}"
+        else:
+            p_in_round = (p_num - 1) % num_teams
+            col_idx = p_in_round if (r_idx % 2 == 0) else (num_teams - 1 - p_in_round)
+            col_name = f"Team {col_idx + 1}"
+
+        if r_idx < total_rounds and col_name in grid_data:
+            grid_data[col_name][r_idx] = f"{item['name']} ({item['pos']})"
 
     board_df = pd.DataFrame(grid_data, index=[f"Round {r+1}" for r in range(total_rounds)])
 
