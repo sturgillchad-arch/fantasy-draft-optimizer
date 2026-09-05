@@ -10,61 +10,80 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 1. ADAPTIVE LIGHT/DARK & RESPONSIVE MOBILE CSS
+# 1. ADAPTIVE LIGHT/DARK CSS WITH EXPLICIT HIGH-CONTRAST FALLBACKS
 st.markdown("""
 <style>
-    :root {
-        --war-bg-card: #ffffff;
-        --war-border: #cbd5e1;
-        --war-border-darker: #94a3b8;
-        --war-text-main: #0f172a;
-        --war-text-sub: #475569;
-        --war-subtle-bg: #f8fafc;
-        --war-row-hover: #e2e8f0;
+    /* Force high contrast text colors directly */
+    .player-name-text {
+        font-size: 0.92rem !important;
+        font-weight: 800 !important;
+        color: #0f172a !important; /* Deep Navy/Black for Light Mode */
+        padding-top: 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
+    .proj-pts-text {
+        font-size: 0.88rem !important;
+        font-weight: 700 !important;
+        color: #1e293b !important;
+        text-align: right;
+        padding-top: 4px;
+    }
+
+    .team-text {
+        font-size: 0.82rem !important;
+        font-weight: 700 !important;
+        color: #475569 !important;
+        padding-top: 4px;
+    }
+
+    /* Dark theme overrides */
     @media (prefers-color-scheme: dark) {
-        :root {
-            --war-bg-card: #111827;
-            --war-border: #1f2937;
-            --war-border-darker: #374151;
-            --war-text-main: #f9fafb;
-            --war-text-sub: #9ca3af;
-            --war-subtle-bg: #1f2937;
-            --war-row-hover: #1e293b;
+        .player-name-text {
+            color: #f8fafc !important;
+        }
+        .proj-pts-text {
+            color: #e2e8f0 !important;
+        }
+        .team-text {
+            color: #94a3b8 !important;
         }
     }
 
-    [data-theme="light"] {
-        --war-bg-card: #ffffff;
-        --war-border: #cbd5e1;
-        --war-border-darker: #94a3b8;
-        --war-text-main: #0f172a;
-        --war-text-sub: #475569;
-        --war-subtle-bg: #f8fafc;
-        --war-row-hover: #e2e8f0;
+    [data-theme="dark"] .player-name-text {
+        color: #f8fafc !important;
+    }
+    [data-theme="dark"] .proj-pts-text {
+        color: #e2e8f0 !important;
+    }
+    [data-theme="dark"] .team-text {
+        color: #94a3b8 !important;
     }
 
-    [data-theme="dark"] {
-        --war-bg-card: #111827;
-        --war-border: #1f2937;
-        --war-border-darker: #374151;
-        --war-text-main: #f9fafb;
-        --war-text-sub: #9ca3af;
-        --war-subtle-bg: #1f2937;
-        --war-row-hover: #1e293b;
-    }
-
+    /* Containers */
     .metric-card {
-        background-color: var(--war-bg-card);
-        border: 2px solid var(--war-border);
+        background-color: #ffffff;
+        border: 2px solid #cbd5e1;
         border-radius: 8px;
         padding: 10px 14px;
         margin-bottom: 8px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.06);
     }
+    @media (prefers-color-scheme: dark) {
+        .metric-card {
+            background-color: #111827;
+            border-color: #1f2937;
+        }
+    }
+    [data-theme="dark"] .metric-card {
+        background-color: #111827;
+        border-color: #1f2937;
+    }
+
     .hud-title {
-        color: var(--war-text-sub);
+        color: #64748b;
         font-size: 0.72rem;
         text-transform: uppercase;
         letter-spacing: 0.05em;
@@ -72,11 +91,18 @@ st.markdown("""
         font-weight: 700;
     }
     .hud-value {
-        color: var(--war-text-main);
+        color: #0f172a;
         font-size: 1.25rem;
         font-weight: 800;
         line-height: 1.2;
     }
+    @media (prefers-color-scheme: dark) {
+        .hud-value { color: #f8fafc; }
+        .hud-title { color: #94a3b8; }
+    }
+    [data-theme="dark"] .hud-value { color: #f8fafc; }
+    [data-theme="dark"] .hud-title { color: #94a3b8; }
+
     .hud-sub {
         color: #059669;
         font-size: 0.72rem;
@@ -84,20 +110,36 @@ st.markdown("""
     }
 
     .prio-row-container {
-        background-color: var(--war-bg-card);
-        border: 1px solid var(--war-border);
+        background-color: #ffffff;
+        border: 1px solid #cbd5e1;
         border-radius: 6px;
-        padding: 6px 10px;
+        padding: 5px 10px;
         margin-bottom: 4px;
     }
     .prio-row-container:hover {
-        background-color: var(--war-row-hover);
+        background-color: #f1f5f9;
+    }
+    @media (prefers-color-scheme: dark) {
+        .prio-row-container {
+            background-color: #111827;
+            border-color: #1f2937;
+        }
+        .prio-row-container:hover {
+            background-color: #1e293b;
+        }
+    }
+    [data-theme="dark"] .prio-row-container {
+        background-color: #111827;
+        border-color: #1f2937;
+    }
+    [data-theme="dark"] .prio-row-container:hover {
+        background-color: #1e293b;
     }
 
     .stButton.sort-hdr > button {
         background: transparent !important;
         border: none !important;
-        color: var(--war-text-sub) !important;
+        color: #475569 !important;
         font-size: 0.72rem !important;
         font-weight: 800 !important;
         text-transform: uppercase !important;
@@ -111,7 +153,7 @@ st.markdown("""
 
     .stTabs [data-baseweb="tab-list"] {
         gap: 4px;
-        border-bottom: 2px solid var(--war-border);
+        border-bottom: 2px solid #cbd5e1;
     }
     .stTabs [data-baseweb="tab"] {
         padding: 6px 14px;
@@ -139,20 +181,6 @@ st.markdown("""
             padding-bottom: 1.5rem !important;
             padding-left: 0.4rem !important;
             padding-right: 0.4rem !important;
-        }
-        .metric-card {
-            padding: 8px 10px !important;
-            margin-bottom: 4px !important;
-        }
-        .hud-value {
-            font-size: 1.05rem !important;
-        }
-        .hud-title {
-            font-size: 0.65rem !important;
-        }
-        button {
-            touch-action: manipulation;
-            min-height: 40px !important;
         }
         .desktop-hdr {
             display: none !important;
@@ -203,7 +231,7 @@ NFL_TEAMS = {
     'MIN', 'NE', 'NO', 'NYG', 'NYJ', 'PHI', 'PIT', 'SF', 'SEA', 'TB', 'TEN', 'WAS'
 }
 
-# 4. ROBUST DATA ENGINE (30s Timeout + Resilient Fallback Pool)
+# 4. ROBUST DATA ENGINE
 @st.cache_data(ttl=900)
 def fetch_player_pool():
     try:
@@ -218,7 +246,6 @@ def fetch_player_pool():
                 rank = p.get('search_rank')
                 is_active = p.get("active", False)
 
-                # Filter strictly for active NFL franchises & standard skill positions
                 if is_active and pos in ['QB', 'RB', 'WR', 'TE', 'DST', 'K'] and team in NFL_TEAMS:
                     calc_rank = float(rank) if (rank is not None and rank > 0) else 450.0
                     
@@ -253,7 +280,6 @@ def fetch_player_pool():
     except Exception:
         pass
 
-    # Extended Offline Fallback (Guarantees War Room never opens empty)
     fallback_roster = [
         {"Name": "Bijan Robinson", "Pos": "RB", "Team": "ATL", "ADP": 1.0, "ProjPts": 320.0, "Status": "Healthy", "Notes": "Active"},
         {"Name": "Jahmyr Gibbs", "Pos": "RB", "Team": "DET", "ADP": 2.0, "ProjPts": 315.0, "Status": "Healthy", "Notes": "Active"},
@@ -503,7 +529,7 @@ with h4:
     st.markdown(f"""
     <div class="metric-card">
         <div class="hud-title">Roster Allocation</div>
-        <div class="hud-value">{team_roster_count}/{total_rounds} Active <span style="font-size:0.85rem; color: var(--war-text-sub);">(+{ir_count} IR)</span></div>
+        <div class="hud-value">{team_roster_count}/{total_rounds} Active <span style="font-size:0.85rem; color: #64748b;">(+{ir_count} IR)</span></div>
         <div class="hud-sub">{(total_rounds - team_roster_count)} open spots</div>
     </div>
     """, unsafe_allow_html=True)
@@ -511,7 +537,7 @@ with h4:
 # 10. DRAFT COUNTDOWN CLOCK COMPONENT
 clock_html = f"""
 <div id="clock-container" data-pick="{curr_p}" style="
-    background: var(--war-bg-card, #ffffff);
+    background: #ffffff;
     border: 2px solid {'#dc2626' if is_turn else '#cbd5e1'};
     border-radius: 8px;
     padding: 8px 14px;
@@ -799,14 +825,14 @@ with c_board:
             return " ▲" if st.session_state.sort_asc else " ▼"
         return ""
 
-    # DESKTOP HEADER BAR (Hidden on mobile viewports via CSS)
+    # DESKTOP HEADER BAR
     st.markdown("<div class='desktop-hdr'>", unsafe_allow_html=True)
     h_act, h_name, h_pos, h_team, h_proj, h_vorp, h_adp, h_surv, h_verd = st.columns(
         [1.2, 3.5, 1.0, 1.0, 1.4, 1.4, 1.2, 1.8, 1.4]
     )
 
     with h_act:
-        st.markdown("<div style='font-size:0.72rem; font-weight:800; color:var(--war-text-sub); padding:4px 0;'>ACTION</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.72rem; font-weight:800; color:#64748b; padding:4px 0;'>ACTION</div>", unsafe_allow_html=True)
     with h_name:
         if st.button(f"PLAYER{sort_indicator('Name')}", key="hdr_sort_name", use_container_width=True):
             set_sort('Name', default_asc=True)
@@ -836,9 +862,9 @@ with c_board:
             set_sort('Survival %', default_asc=False)
             st.rerun()
     with h_verd:
-        st.markdown("<div style='font-size:0.72rem; font-weight:800; color:var(--war-text-sub); text-align:right; padding:4px 0;'>VERDICT</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.72rem; font-weight:800; color:#64748b; text-align:right; padding:4px 0;'>VERDICT</div>", unsafe_allow_html=True)
 
-    st.markdown("<div style='border-bottom: 2px solid var(--war-border); margin-bottom: 6px;'></div></div>", unsafe_allow_html=True)
+    st.markdown("<div style='border-bottom: 2px solid #cbd5e1; margin-bottom: 6px;'></div></div>", unsafe_allow_html=True)
 
     if priority_display.empty:
         st.info("No available players matching this positional filter.")
@@ -855,23 +881,24 @@ with c_board:
 
             with c_name:
                 health_icon = "🚨 " if row['Status'] in ["IR", "Out", "Suspended"] else ("⚠️ " if row['Status'] in ["Questionable", "Doubtful", "PUP"] else "")
-                st.markdown(f"<div style='font-size: 0.88rem; font-weight: 700; color: var(--war-text-main); padding-top: 4px;'>{health_icon}{row['Name']}</div>", unsafe_allow_html=True)
+                # Guaranteed high-contrast black/navy text via class .player-name-text
+                st.markdown(f"<div class='player-name-text'>{health_icon}{row['Name']}</div>", unsafe_allow_html=True)
 
             with c_pos:
                 badge_class = f"badge-{row['Pos'].lower()}" if row['Pos'] in ['RB', 'WR', 'QB', 'TE'] else "badge-other"
                 st.markdown(f"<div style='padding-top: 4px;'><span class='badge-pos {badge_class}'>{row['Pos']}</span></div>", unsafe_allow_html=True)
 
             with c_team:
-                st.markdown(f"<div style='font-size: 0.82rem; font-weight: 600; color: var(--war-text-sub); padding-top: 4px;'>{row['Team']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='team-text'>{row['Team']}</div>", unsafe_allow_html=True)
 
             with c_proj:
-                st.markdown(f"<div style='font-size: 0.85rem; font-weight: 700; color: var(--war-text-main); text-align: right; padding-top: 4px;'>{row['ProjPts']:.1f}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='proj-pts-text'>{row['ProjPts']:.1f}</div>", unsafe_allow_html=True)
 
             with c_vorp:
                 st.markdown(f"<div style='font-size: 0.85rem; font-weight: 800; color: #2563eb; text-align: right; padding-top: 4px;'>+{row['VORP']:.1f}</div>", unsafe_allow_html=True)
 
             with c_adp:
-                st.markdown(f"<div style='font-size: 0.82rem; font-weight: 600; color: var(--war-text-sub); text-align: right; padding-top: 4px;'>{row['ADP']:.0f}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size: 0.82rem; font-weight: 700; color: #64748b; text-align: right; padding-top: 4px;'>{row['ADP']:.0f}</div>", unsafe_allow_html=True)
 
             with c_surv:
                 surv_color = "#059669" if row['Survival %'] >= 70 else ("#d97706" if row['Survival %'] >= 35 else "#dc2626")
@@ -1018,7 +1045,7 @@ with tab_board:
 
     def style_draft_grid(val):
         if "—" in val:
-            return "color: #94a3b8; background-color: var(--war-subtle-bg);"
+            return "color: #94a3b8; background-color: #f8fafc;"
         if "(RB)" in val:
             return "background-color: #2563eb; color: #ffffff; font-weight: 700;"
         if "(WR)" in val:
