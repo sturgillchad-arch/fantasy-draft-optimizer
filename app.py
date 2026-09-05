@@ -10,177 +10,109 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 1. ADAPTIVE LIGHT/DARK CSS WITH EXPLICIT HIGH-CONTRAST FALLBACKS
+# 1. HIGH-CONTRAST LIGHT/DARK ADAPTIVE CSS
 st.markdown("""
 <style>
-    /* Force high contrast text colors directly */
-    .player-name-text {
-        font-size: 0.92rem !important;
-        font-weight: 800 !important;
-        color: #0f172a !important; /* Deep Navy/Black for Light Mode */
-        padding-top: 4px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .proj-pts-text {
-        font-size: 0.88rem !important;
-        font-weight: 700 !important;
-        color: #1e293b !important;
-        text-align: right;
-        padding-top: 4px;
-    }
-
-    .team-text {
-        font-size: 0.82rem !important;
-        font-weight: 700 !important;
-        color: #475569 !important;
-        padding-top: 4px;
-    }
-
-    /* Dark theme overrides */
-    @media (prefers-color-scheme: dark) {
-        .player-name-text {
-            color: #f8fafc !important;
-        }
-        .proj-pts-text {
-            color: #e2e8f0 !important;
-        }
-        .team-text {
-            color: #94a3b8 !important;
-        }
-    }
-
-    [data-theme="dark"] .player-name-text {
-        color: #f8fafc !important;
-    }
-    [data-theme="dark"] .proj-pts-text {
-        color: #e2e8f0 !important;
-    }
-    [data-theme="dark"] .team-text {
-        color: #94a3b8 !important;
-    }
-
-    /* Containers */
+    /* Metric Cards */
     .metric-card {
-        background-color: #ffffff;
-        border: 2px solid #cbd5e1;
+        background-color: #f8fafc;
+        border: 2px solid #94a3b8;
         border-radius: 8px;
         padding: 10px 14px;
         margin-bottom: 8px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     }
     @media (prefers-color-scheme: dark) {
         .metric-card {
-            background-color: #111827;
-            border-color: #1f2937;
+            background-color: #111827 !important;
+            border-color: #374151 !important;
         }
     }
     [data-theme="dark"] .metric-card {
-        background-color: #111827;
-        border-color: #1f2937;
+        background-color: #111827 !important;
+        border-color: #374151 !important;
     }
 
     .hud-title {
-        color: #64748b;
+        color: #334155;
         font-size: 0.72rem;
         text-transform: uppercase;
         letter-spacing: 0.05em;
         margin-bottom: 2px;
-        font-weight: 700;
+        font-weight: 800;
     }
     .hud-value {
-        color: #0f172a;
+        color: #000000;
         font-size: 1.25rem;
-        font-weight: 800;
+        font-weight: 900;
         line-height: 1.2;
     }
     @media (prefers-color-scheme: dark) {
-        .hud-value { color: #f8fafc; }
-        .hud-title { color: #94a3b8; }
+        .hud-value { color: #ffffff !important; }
+        .hud-title { color: #9ca3af !important; }
     }
-    [data-theme="dark"] .hud-value { color: #f8fafc; }
-    [data-theme="dark"] .hud-title { color: #94a3b8; }
+    [data-theme="dark"] .hud-value { color: #ffffff !important; }
+    [data-theme="dark"] .hud-title { color: #9ca3af !important; }
 
     .hud-sub {
-        color: #059669;
-        font-size: 0.72rem;
-        font-weight: 600;
+        color: #047857;
+        font-size: 0.74rem;
+        font-weight: 700;
     }
 
-    .prio-row-container {
+    /* Row Card Container */
+    .prio-card {
         background-color: #ffffff;
-        border: 1px solid #cbd5e1;
+        border: 2px solid #94a3b8;
         border-radius: 6px;
-        padding: 5px 10px;
-        margin-bottom: 4px;
-    }
-    .prio-row-container:hover {
-        background-color: #f1f5f9;
+        padding: 6px 10px;
+        margin-bottom: 6px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     }
     @media (prefers-color-scheme: dark) {
-        .prio-row-container {
-            background-color: #111827;
-            border-color: #1f2937;
-        }
-        .prio-row-container:hover {
-            background-color: #1e293b;
+        .prio-card {
+            background-color: #111827 !important;
+            border-color: #374151 !important;
         }
     }
-    [data-theme="dark"] .prio-row-container {
-        background-color: #111827;
-        border-color: #1f2937;
-    }
-    [data-theme="dark"] .prio-row-container:hover {
-        background-color: #1e293b;
+    [data-theme="dark"] .prio-card {
+        background-color: #111827 !important;
+        border-color: #374151 !important;
     }
 
+    /* Position Badges */
+    .badge-pos {
+        font-size: 0.72rem;
+        font-weight: 800;
+        padding: 3px 7px;
+        border-radius: 4px;
+        letter-spacing: 0.02em;
+    }
+    .badge-rb { background-color: #1d4ed8; color: #ffffff !important; }
+    .badge-wr { background-color: #047857; color: #ffffff !important; }
+    .badge-qb { background-color: #c2410c; color: #ffffff !important; }
+    .badge-te { background-color: #b45309; color: #ffffff !important; }
+    .badge-other { background-color: #334155; color: #ffffff !important; }
+
+    /* Buttons inside headers */
     .stButton.sort-hdr > button {
         background: transparent !important;
         border: none !important;
-        color: #475569 !important;
+        color: #0f172a !important;
         font-size: 0.72rem !important;
-        font-weight: 800 !important;
+        font-weight: 900 !important;
         text-transform: uppercase !important;
         letter-spacing: 0.03em !important;
         padding: 4px 2px !important;
         box-shadow: none !important;
     }
     .stButton.sort-hdr > button:hover {
-        color: #2563eb !important;
+        color: #1d4ed8 !important;
     }
-
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 4px;
-        border-bottom: 2px solid #cbd5e1;
-    }
-    .stTabs [data-baseweb="tab"] {
-        padding: 6px 14px;
-        font-size: 0.85rem;
-        font-weight: 700;
-        border-radius: 6px 6px 0 0;
-    }
-
-    .badge-pos {
-        font-size: 0.72rem;
-        font-weight: 700;
-        padding: 2px 6px;
-        border-radius: 4px;
-        letter-spacing: 0.02em;
-    }
-    .badge-rb { background-color: #2563eb; color: #ffffff; }
-    .badge-wr { background-color: #059669; color: #ffffff; }
-    .badge-qb { background-color: #ea580c; color: #ffffff; }
-    .badge-te { background-color: #d97706; color: #ffffff; }
-    .badge-other { background-color: #475569; color: #ffffff; }
 
     @media (max-width: 768px) {
         .block-container {
-            padding-top: 0.5rem !important;
-            padding-bottom: 1.5rem !important;
-            padding-left: 0.4rem !important;
-            padding-right: 0.4rem !important;
+            padding: 0.5rem !important;
         }
         .desktop-hdr {
             display: none !important;
@@ -275,8 +207,7 @@ def fetch_player_pool():
                         "Notes": detailed_notes
                     })
             if pool:
-                df = pd.DataFrame(pool).sort_values(by="ADP").reset_index(drop=True)
-                return df
+                return pd.DataFrame(pool).sort_values(by="ADP").reset_index(drop=True)
     except Exception:
         pass
 
@@ -492,10 +423,10 @@ with h1:
 with h2:
     if curr_p > TOTAL_PICKS:
         status_text = "🏁 COMPLETED"
-        status_color = "#059669"
+        status_color = "#047857"
     else:
         status_text = "🚨 ON CLOCK" if is_turn else f"In Queue ({gap} away)"
-        status_color = "#dc2626" if is_turn else "#2563eb"
+        status_color = "#b91c1c" if is_turn else "#1d4ed8"
     st.markdown(f"""
     <div class="metric-card">
         <div class="hud-title">Clock Status</div>
@@ -529,7 +460,7 @@ with h4:
     st.markdown(f"""
     <div class="metric-card">
         <div class="hud-title">Roster Allocation</div>
-        <div class="hud-value">{team_roster_count}/{total_rounds} Active <span style="font-size:0.85rem; color: #64748b;">(+{ir_count} IR)</span></div>
+        <div class="hud-value">{team_roster_count}/{total_rounds} Active <span style="font-size:0.85rem; color: #475569;">(+{ir_count} IR)</span></div>
         <div class="hud-sub">{(total_rounds - team_roster_count)} open spots</div>
     </div>
     """, unsafe_allow_html=True)
@@ -537,8 +468,8 @@ with h4:
 # 10. DRAFT COUNTDOWN CLOCK COMPONENT
 clock_html = f"""
 <div id="clock-container" data-pick="{curr_p}" style="
-    background: #ffffff;
-    border: 2px solid {'#dc2626' if is_turn else '#cbd5e1'};
+    background: #f8fafc;
+    border: 2px solid {'#b91c1c' if is_turn else '#94a3b8'};
     border-radius: 8px;
     padding: 8px 14px;
     display: flex;
@@ -549,20 +480,20 @@ clock_html = f"""
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 ">
     <div style="display: flex; align-items: center; gap: 10px;">
-        <span style="font-size: 0.8rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: {'#dc2626' if is_turn else '#475569'};">
+        <span style="font-size: 0.8rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: {'#b91c1c' if is_turn else '#1e293b'};">
             {'🚨 ON CLOCK' if is_turn else '⏱️ TIMER'}
         </span>
         <div id="timer-display" style="
             font-size: 1.45rem;
-            font-weight: 800;
+            font-weight: 900;
             font-variant-numeric: tabular-nums;
-            color: #059669;
+            color: #047857;
             min-width: 65px;
         ">00:{clock_seconds:02d}</div>
     </div>
     <div style="display: flex; align-items: center; gap: 6px;">
         <button id="btn-toggle" onclick="toggleClock()" style="
-            background: #2563eb;
+            background: #1d4ed8;
             color: #ffffff;
             border: none;
             border-radius: 5px;
@@ -572,7 +503,7 @@ clock_html = f"""
             cursor: pointer;
         ">Pause</button>
         <button onclick="resetClock()" style="
-            background: #64748b;
+            background: #475569;
             color: #ffffff;
             border: none;
             border-radius: 5px;
@@ -629,11 +560,11 @@ clock_html = f"""
         el.innerText = (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs;
 
         if (remaining <= 5) {{
-            el.style.color = '#dc2626';
+            el.style.color = '#b91c1c';
         }} else if (remaining <= 15) {{
-            el.style.color = '#d97706';
+            el.style.color = '#b45309';
         }} else {{
-            el.style.color = '#059669';
+            el.style.color = '#047857';
         }}
     }}
 
@@ -745,7 +676,7 @@ else:
 
 st.markdown("---")
 
-# 12. TIER 1: SPLIT WORKSPACE (PRIORITY TARGETS LEFT • ROSTER RIGHT)
+# 12. TIER 1: SPLIT WORKSPACE
 c_board, c_roster = st.columns([3.1, 1.9])
 
 TABLE_CONFIG = {
@@ -825,14 +756,14 @@ with c_board:
             return " ▲" if st.session_state.sort_asc else " ▼"
         return ""
 
-    # DESKTOP HEADER BAR
+    # HIGH CONTRAST DESKTOP HEADER BAR
     st.markdown("<div class='desktop-hdr'>", unsafe_allow_html=True)
     h_act, h_name, h_pos, h_team, h_proj, h_vorp, h_adp, h_surv, h_verd = st.columns(
         [1.2, 3.5, 1.0, 1.0, 1.4, 1.4, 1.2, 1.8, 1.4]
     )
 
     with h_act:
-        st.markdown("<div style='font-size:0.72rem; font-weight:800; color:#64748b; padding:4px 0;'>ACTION</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.75rem; font-weight:900; color:#0f172a !important; padding:4px 0;'>ACTION</div>", unsafe_allow_html=True)
     with h_name:
         if st.button(f"PLAYER{sort_indicator('Name')}", key="hdr_sort_name", use_container_width=True):
             set_sort('Name', default_asc=True)
@@ -862,15 +793,15 @@ with c_board:
             set_sort('Survival %', default_asc=False)
             st.rerun()
     with h_verd:
-        st.markdown("<div style='font-size:0.72rem; font-weight:800; color:#64748b; text-align:right; padding:4px 0;'>VERDICT</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.75rem; font-weight:900; color:#0f172a !important; text-align:right; padding:4px 0;'>VERDICT</div>", unsafe_allow_html=True)
 
-    st.markdown("<div style='border-bottom: 2px solid #cbd5e1; margin-bottom: 6px;'></div></div>", unsafe_allow_html=True)
+    st.markdown("<div style='border-bottom: 2px solid #94a3b8; margin-bottom: 6px;'></div></div>", unsafe_allow_html=True)
 
     if priority_display.empty:
         st.info("No available players matching this positional filter.")
     else:
         for idx, row in priority_display.iterrows():
-            st.markdown("<div class='prio-row-container'>", unsafe_allow_html=True)
+            st.markdown("<div class='prio-card'>", unsafe_allow_html=True)
             c_btn, c_name, c_pos, c_team, c_proj, c_vorp, c_adp, c_surv, c_act = st.columns(
                 [1.2, 3.5, 1.0, 1.0, 1.4, 1.4, 1.2, 1.8, 1.4]
             )
@@ -881,32 +812,37 @@ with c_board:
 
             with c_name:
                 health_icon = "🚨 " if row['Status'] in ["IR", "Out", "Suspended"] else ("⚠️ " if row['Status'] in ["Questionable", "Doubtful", "PUP"] else "")
-                # Guaranteed high-contrast black/navy text via class .player-name-text
-                st.markdown(f"<div class='player-name-text'>{health_icon}{row['Name']}</div>", unsafe_allow_html=True)
+                # Direct, hardcoded bold black style that overrides Streamlit light mode defaults
+                st.markdown(
+                    f"<div style='font-size:0.95rem; font-weight:900; color:#000000 !important; padding-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>"
+                    f"{health_icon}{row['Name']}"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
 
             with c_pos:
                 badge_class = f"badge-{row['Pos'].lower()}" if row['Pos'] in ['RB', 'WR', 'QB', 'TE'] else "badge-other"
                 st.markdown(f"<div style='padding-top: 4px;'><span class='badge-pos {badge_class}'>{row['Pos']}</span></div>", unsafe_allow_html=True)
 
             with c_team:
-                st.markdown(f"<div class='team-text'>{row['Team']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size:0.85rem; font-weight:800; color:#334155 !important; padding-top:4px;'>{row['Team']}</div>", unsafe_allow_html=True)
 
             with c_proj:
-                st.markdown(f"<div class='proj-pts-text'>{row['ProjPts']:.1f}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size:0.90rem; font-weight:800; color:#0f172a !important; text-align:right; padding-top:4px;'>{row['ProjPts']:.1f}</div>", unsafe_allow_html=True)
 
             with c_vorp:
-                st.markdown(f"<div style='font-size: 0.85rem; font-weight: 800; color: #2563eb; text-align: right; padding-top: 4px;'>+{row['VORP']:.1f}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size:0.90rem; font-weight:900; color:#1d4ed8 !important; text-align:right; padding-top:4px;'>+{row['VORP']:.1f}</div>", unsafe_allow_html=True)
 
             with c_adp:
-                st.markdown(f"<div style='font-size: 0.82rem; font-weight: 700; color: #64748b; text-align: right; padding-top: 4px;'>{row['ADP']:.0f}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size:0.85rem; font-weight:800; color:#475569 !important; text-align:right; padding-top:4px;'>{row['ADP']:.0f}</div>", unsafe_allow_html=True)
 
             with c_surv:
-                surv_color = "#059669" if row['Survival %'] >= 70 else ("#d97706" if row['Survival %'] >= 35 else "#dc2626")
-                st.markdown(f"<div style='font-size: 0.85rem; font-weight: 800; color: {surv_color}; text-align: right; padding-top: 4px;'>{row['Survival %']}%</div>", unsafe_allow_html=True)
+                surv_color = "#047857" if row['Survival %'] >= 70 else ("#b45309" if row['Survival %'] >= 35 else "#b91c1c")
+                st.markdown(f"<div style='font-size:0.90rem; font-weight:900; color:{surv_color} !important; text-align:right; padding-top:4px;'>{row['Survival %']}%</div>", unsafe_allow_html=True)
 
             with c_act:
-                act_color = "#2563eb" if "Safe" in row['Action'] else ("#dc2626" if "Draft" in row['Action'] else "#64748b")
-                st.markdown(f"<div style='font-size: 0.8rem; font-weight: 700; color: {act_color}; text-align: right; padding-top: 4px;'>{row['Action']}</div>", unsafe_allow_html=True)
+                act_color = "#1d4ed8" if "Safe" in row['Action'] else ("#b91c1c" if "Draft" in row['Action'] else "#475569")
+                st.markdown(f"<div style='font-size:0.82rem; font-weight:800; color:{act_color} !important; text-align:right; padding-top:4px;'>{row['Action']}</div>", unsafe_allow_html=True)
 
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1047,14 +983,14 @@ with tab_board:
         if "—" in val:
             return "color: #94a3b8; background-color: #f8fafc;"
         if "(RB)" in val:
-            return "background-color: #2563eb; color: #ffffff; font-weight: 700;"
+            return "background-color: #1d4ed8; color: #ffffff; font-weight: 700;"
         if "(WR)" in val:
-            return "background-color: #059669; color: #ffffff; font-weight: 700;"
+            return "background-color: #047857; color: #ffffff; font-weight: 700;"
         if "(QB)" in val:
-            return "background-color: #ea580c; color: #ffffff; font-weight: 700;"
+            return "background-color: #c2410c; color: #ffffff; font-weight: 700;"
         if "(TE)" in val:
-            return "background-color: #d97706; color: #ffffff; font-weight: 700;"
-        return "background-color: #475569; color: #ffffff; font-weight: 700;"
+            return "background-color: #b45309; color: #ffffff; font-weight: 700;"
+        return "background-color: #334155; color: #ffffff; font-weight: 700;"
 
     try:
         styled_board = board_df.style.map(style_draft_grid)
